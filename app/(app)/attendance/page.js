@@ -13,17 +13,26 @@ export default async function AttendancePage() {
     redirect('/login');
   }
 
-  const { data: staffRow } = await supabase
-    .from('staff')
-    .select('academy_id, academies(name)')
+  // Fetch institute
+  let { data: instData } = await supabase
+    .from('institutes')
+    .select('id, name, type')
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (!staffRow) {
-    redirect('/onboarding');
+  if (!instData) {
+    const { data: newInst } = await supabase
+      .from('institutes')
+      .insert([{ user_id: user.id, name: 'AcadPK Portal', type: 'School / College' }])
+      .select('id, name, type')
+      .single();
+    instData = newInst;
   }
 
   return (
-    <AttendanceClient academyId={staffRow.academy_id} academyName={staffRow.academies?.name} />
+    <AttendanceClient
+      instituteId={instData?.id}
+      instituteName={instData?.name || 'AcadPK Portal'}
+    />
   );
 }

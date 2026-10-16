@@ -13,17 +13,27 @@ export default async function StudentsPage() {
     redirect('/login');
   }
 
-  const { data: staffRow } = await supabase
-    .from('staff')
-    .select('academy_id, academies(name)')
+  // Fetch or resolve the institute for the logged-in user
+  let { data: instData } = await supabase
+    .from('institutes')
+    .select('id, name, type')
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (!staffRow) {
-    redirect('/onboarding');
+  // Fallback auto-creation if not initialized yet
+  if (!instData) {
+    const { data: newInst } = await supabase
+      .from('institutes')
+      .insert([{ user_id: user.id, name: 'AcadPK Portal', type: 'School / College' }])
+      .select('id, name, type')
+      .single();
+    instData = newInst;
   }
 
   return (
-    <StudentsClient academyId={staffRow.academy_id} academyName={staffRow.academies?.name} />
+    <StudentsClient 
+      instituteId={instData?.id} 
+      instituteName={instData?.name || 'AcadPK Portal'} 
+    />
   );
 }

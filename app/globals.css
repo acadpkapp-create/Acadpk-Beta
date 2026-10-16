@@ -1,27 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html {
-  scroll-behavior: smooth;
-}
-
 body {
-  background-color: #F7F8FB;
+  font-family: 'Inter', sans-serif;
+  background-color: #f7f9fb;
+  color: #191c1e;
 }
 
-*:focus-visible {
-  outline: 2px solid #006C4D;
-  outline-offset: 2px;
+/* Material Symbols Icon Configuration */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+.icon-fill {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Exact Glassmorphism Card Style */
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 75, 48, 0.08);
+}
+
+/* Exact Hero Background Image */
+.hero-bg {
+  background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDxxxV71Y98WVMGByKFLg848lnIycfMxw7I_5BbcWBlR9RsYsiS7fdHpaMFnKePxQmLVjP2hxHif5h_UZ_Y4RXbBVVHwDAoFWPS0RMPdX-uS5698KTTFqZ4A-DL_Z488ghgjlW96TyYB5eNUb78djRwYTH_JnPE1DCTGejKdnT4vh6IfvEuP3tahuERdEc7nzgHaJxYz6NM1wliUgV7mLebXnXLmi1CH8rYgkx9SPCvHuH7g8mK22lS9g');
+  background-size: cover;
+  background-position: center;
 }
