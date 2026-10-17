@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-client';
 
@@ -168,7 +169,6 @@ export default function AppShell({
     },
   ];
 
-  // Mobile Bottom Nav specific items
   const bottomNavItems = [
     {
       name: 'Dashboard',
@@ -229,14 +229,18 @@ export default function AppShell({
             <div className="flex items-center gap-3 min-w-0">
               <button
                 onClick={() => sidebarCollapsed && setSidebarCollapsed(false)}
-                className={`w-10 h-10 rounded-xl bg-[#004b30] flex items-center justify-center shrink-0 shadow-sm ${
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                   sidebarCollapsed ? 'cursor-pointer hover:opacity-90' : ''
                 }`}
               >
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6df8c1" strokeWidth="2.2">
-                  <path d="M12 3L4 7v6c0 5.55 3.84 10.74 8 12 4.16-1.26 8-5.45 8-12V7l-8-4z" strokeLinejoin="round" />
-                  <path d="M9 12l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <Image
+                  src="/logo.png"
+                  alt="AcadPK Logo"
+                  width={36}
+                  height={36}
+                  className="object-contain"
+                  priority
+                />
               </button>
 
               {(!sidebarCollapsed || mobileMenuOpen) && (

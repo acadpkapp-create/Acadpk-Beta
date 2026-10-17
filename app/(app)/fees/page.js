@@ -13,17 +13,17 @@ export default async function FeesPage() {
     redirect('/login');
   }
 
-  // Gracefully fetch staff info without forcing an onboarding redirect trap
-  const { data: staffRow } = await supabase
-    .from('staff')
-    .select('academy_id, academies(name)')
+  // Fetch the user's institute for proper multi-tenant isolation
+  const { data: institute } = await supabase
+    .from('institutes')
+    .select('id, name')
     .eq('user_id', user.id)
     .maybeSingle();
 
   return (
     <FeesClient 
-      academyId={staffRow?.academy_id || null} 
-      academyName={staffRow?.academies?.name || 'AcadPK Portal'} 
+      instituteId={institute?.id || null} 
+      instituteName={institute?.name || 'AcadPK Portal'} 
     />
   );
 }

@@ -33,8 +33,8 @@ function IconWhatsApp(props) {
 }
 
 export default function FeesClient({ academyId, academyName, instituteId, instituteName }) {
-  const activeId = academyId || instituteId;
-  const activeName = academyName || instituteName || 'AcadPK Portal';
+  const activeId = instituteId || academyId;
+  const activeName = instituteName || academyName || 'AcadPK Portal';
 
   const router = useRouter();
   const [month, setMonth] = useState(currentMonthStr());
@@ -51,14 +51,20 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
   const supabase = createClient();
 
   async function loadData() {
+    if (!activeId) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
+      // STRICT INSTITUTE_ID & ACADEMY_ID FILTERING FOR MULTI-TENANT ISOLATION
       const [classRes, studentRes, feeRes] = await Promise.all([
-        supabase.from('classes').select('*').order('name', { ascending: true }),
-        supabase.from('students').select('*').order('full_name', { ascending: true }),
-        supabase.from('fees').select('*').eq('fee_month', month),
+        supabase.from('classes').select('*').eq('institute_id', activeId).order('name', { ascending: true }),
+        supabase.from('students').select('*').eq('institute_id', activeId).order('full_name', { ascending: true }),
+        supabase.from('fees').select('*').eq('academy_id', activeId).eq('fee_month', month),
       ]);
 
       if (classRes.error) throw classRes.error;
@@ -82,7 +88,7 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
 
   useEffect(() => {
     loadData();
-  }, [month]);
+  }, [month, activeId]);
 
   const classGroups = useMemo(() => {
     const groups = classes.map((c) => {
@@ -115,7 +121,6 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     return groups;
   }, [classes, students]);
 
-  // Generate batch fees for a class (Inserts 'due' status records for the selected month using academy_id)
   async function handleGenerateBatchFees(group) {
     const unbilledStudents = group.students.filter((s) => !fees[s.id]);
     if (unbilledStudents.length === 0) {
@@ -146,7 +151,6 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     router.refresh();
   }
 
-  // Toggle individual fee status in `fees` table
   async function toggleFeeStatus(student) {
     const existingFee = fees[student.id];
     if (!existingFee) return;
@@ -166,7 +170,6 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     router.refresh();
   }
 
-  // Mark all students in active group as Paid for this month
   async function handleMarkAllPaid(group) {
     setActionLoading(true);
     setError('');
@@ -195,7 +198,6 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     router.refresh();
   }
 
-  // Print voucher
   function handlePrintVoucher(student) {
     const feeRow = fees[student.id];
     const amount = feeRow ? feeRow.amount : (student.fee_amount || 5000);
@@ -335,69 +337,75 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
 
           {viewMode === 'grid' && (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {classGroups.map((group) => {
-                const unbilledCount = group.students.filter((s) => !fees[s.id]).length;
-                const unpaidCount = group.students.filter((s) => fees[s.id] && fees[s.id].status === 'due').length;
-                const groupCollected = group.students.reduce((sum, s) => {
-                  const f = fees[s.id];
-                  return sum + (f && f.status === 'paid' ? Number(f.amount || 0) : 0);
-                }, 0);
+              {classGroups.length === 0 ? (
+                <div className="col-span-full bg-white border border-slate-200/90 rounded-3xl p-10 text-center text-slate-400">
+                  <p className="text-sm font-medium">No classes or students found for this institute yet.</p>
+                </div>
+              ) : (
+                classGroups.map((group) => {
+                  const unbilledCount = group.students.filter((s) => !fees[s.id]).length;
+                  const unpaidCount = group.students.filter((s) => fees[s.id] && fees[s.id].status === 'due').length;
+                  const groupCollected = group.students.reduce((sum, s) => {
+                    const f = fees[s.id];
+                    return sum + (f && f.status === 'paid' ? Number(f.amount || 0) : 0);
+                  }, 0);
 
-                return (
-                  <div
-                    key={group.id}
-                    className="bg-white border border-slate-200/90 rounded-3xl p-7 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between mb-4">
-                        <div>
-                          <h3 className="text-2xl font-bold text-slate-900 tracking-tight">{group.name}</h3>
-                          <p className="text-sm text-slate-500 mt-1">
-                            {group.section ? `Section ${group.section}` : ''}
-                            {group.section && group.shift ? ' • ' : ''}
-                            {group.shift || 'General Batch'}
-                          </p>
+                  return (
+                    <div
+                      key={group.id}
+                      className="bg-white border border-slate-200/90 rounded-3xl p-7 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h3 className="text-2xl font-bold text-slate-900 tracking-tight">{group.name}</h3>
+                            <p className="text-sm text-slate-500 mt-1">
+                              {group.section ? `Section ${group.section}` : ''}
+                              {group.section && group.shift ? ' • ' : ''}
+                              {group.shift || 'General Batch'}
+                            </p>
+                          </div>
+                          <div className={`px-3.5 py-1.5 rounded-full text-xs font-bold ${
+                            unbilledCount > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200' : unpaidCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-[#006c4d] border border-emerald-200'
+                          }`}>
+                            {unbilledCount > 0 ? `${unbilledCount} Not Billed` : unpaidCount > 0 ? `${unpaidCount} Due` : 'All Paid ✓'}
+                          </div>
                         </div>
-                        <div className={`px-3.5 py-1.5 rounded-full text-xs font-bold ${
-                          unbilledCount > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200' : unpaidCount > 0 ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-[#006c4d] border border-emerald-200'
-                        }`}>
-                          {unbilledCount > 0 ? `${unbilledCount} Not Billed` : unpaidCount > 0 ? `${unpaidCount} Due` : 'All Paid ✓'}
+
+                        <div className="space-y-3.5 my-5 pt-3 border-t border-slate-100 text-sm">
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span className="text-slate-400 font-medium">Total Enrolled:</span>
+                            <span className="font-bold text-slate-800">{group.students.length} Students</span>
+                          </div>
+                          <div className="flex items-center justify-between text-slate-600">
+                            <span className="text-slate-400 font-medium">Collected:</span>
+                            <span className="font-bold text-[#006c4d]">PKR {groupCollected.toLocaleString()}</span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="space-y-3.5 my-5 pt-3 border-t border-slate-100 text-sm">
-                        <div className="flex items-center justify-between text-slate-600">
-                          <span className="text-slate-400 font-medium">Total Enrolled:</span>
-                          <span className="font-bold text-slate-800">{group.students.length} Students</span>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-600">
-                          <span className="text-slate-400 font-medium">Collected:</span>
-                          <span className="font-bold text-[#006c4d]">PKR {groupCollected.toLocaleString()}</span>
-                        </div>
+                      <div className="grid grid-cols-2 gap-3 pt-3">
+                        <button
+                          onClick={() => handleGenerateBatchFees(group)}
+                          disabled={actionLoading}
+                          className="py-3 px-3 bg-[#004b30] hover:bg-[#003823] text-white rounded-2xl text-xs font-bold transition-all shadow-sm cursor-pointer text-center disabled:opacity-50"
+                        >
+                          Generate Fee
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveClassGroup(group);
+                            setViewMode('detailing');
+                          }}
+                          className="py-3 px-3 border border-slate-200 hover:border-[#006c4d] text-slate-700 hover:text-[#006c4d] rounded-2xl text-xs font-bold transition-all cursor-pointer text-center"
+                        >
+                          View Status
+                        </button>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-2 gap-3 pt-3">
-                      <button
-                        onClick={() => handleGenerateBatchFees(group)}
-                        disabled={actionLoading}
-                        className="py-3 px-3 bg-[#004b30] hover:bg-[#003823] text-white rounded-2xl text-xs font-bold transition-all shadow-sm cursor-pointer text-center disabled:opacity-50"
-                      >
-                        Generate Fee
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveClassGroup(group);
-                          setViewMode('detailing');
-                        }}
-                        className="py-3 px-3 border border-slate-200 hover:border-[#006c4d] text-slate-700 hover:text-[#006c4d] rounded-2xl text-xs font-bold transition-all cursor-pointer text-center"
-                      >
-                        View Status
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           )}
 
