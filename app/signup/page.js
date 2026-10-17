@@ -2,11 +2,14 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase-client';
 
 export default function SignupPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -45,7 +48,7 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="min-h-screen flex bg-white text-slate-900 font-sans antialiased">
+    <main className="min-h-screen flex bg-slate-50 md:bg-white text-slate-900 font-sans antialiased">
       {/* Left Artwork Panel */}
       <div className="hidden md:block w-1/2 relative bg-[#004d3d] overflow-hidden">
         <img
@@ -54,8 +57,8 @@ export default function SignupPage() {
           className="absolute inset-0 w-full h-full object-cover opacity-50"
         />
 
-        <div className="relative h-full flex flex-col justify-between p-12 z-10">
-          <a
+        <div className="relative h-full flex flex-col justify-between p-12 z-10 bg-gradient-to-t from-slate-950/80 via-slate-900/30 to-transparent">
+          <Link
             href="/"
             className="text-white/85 hover:text-white text-sm font-medium inline-flex items-center gap-2 transition-colors"
           >
@@ -63,10 +66,20 @@ export default function SignupPage() {
               <path d="M19 12H5M12 19l-7-7 7-7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Back to Home
-          </a>
+          </Link>
 
           <div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-6 tracking-tight">AcadPK</h2>
+            <div className="flex items-center gap-3 mb-6">
+              <Image
+                src="/logo.png"
+                alt="AcadPK Logo"
+                width={36}
+                height={36}
+                className="object-contain"
+                priority
+              />
+              <h2 className="text-3xl font-bold text-white tracking-tight">AcadPK</h2>
+            </div>
             
             <div className="border-l-2 border-white/50 pl-4 py-0.5">
               <p className="text-white/90 text-sm sm:text-base italic font-normal leading-relaxed mb-3">
@@ -81,29 +94,40 @@ export default function SignupPage() {
       </div>
 
       {/* Right Sign-Up Form Panel */}
-      <div className="flex-1 flex items-center justify-center p-6 md:p-12 bg-white">
-        <div className="w-full max-w-[400px]">
-          {/* Mobile Brand Title */}
-          <div className="md:hidden mb-8">
-            <h2 className="text-3xl font-bold text-slate-900">AcadPK</h2>
-          </div>
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-8 md:p-12">
+        <div className="w-full max-w-[420px] bg-white rounded-3xl border border-slate-200/80 md:border-none p-6 sm:p-8 md:p-0 shadow-sm md:shadow-none">
+          
+          {/* Logo & Header */}
+          <div className="flex flex-col items-center text-center mb-8">
+            <Link href="/" className="inline-flex items-center gap-2.5 mb-4 group">
+              <Image
+                src="/logo.png"
+                alt="AcadPK Logo"
+                width={44}
+                height={44}
+                className="object-contain transition-transform group-hover:scale-105"
+                priority
+              />
+              <span className="font-extrabold text-2xl text-slate-900 tracking-tight">AcadPK</span>
+            </Link>
 
-          <h1 className="text-3xl font-bold text-slate-900 mb-2 tracking-tight text-center md:text-left">
-            Create Your Account
-          </h1>
-          <p className="text-sm text-slate-500 mb-8 text-center md:text-left">
-            Set up your academy on AcadPK today
-          </p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+              Create Your Account
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              Set up your academy on AcadPK today
+            </p>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="p-3.5 text-xs sm:text-sm rounded-lg bg-rose-50 text-rose-600 border border-rose-200">
+              <div className="p-3.5 text-xs sm:text-sm rounded-xl bg-rose-50 text-rose-600 border border-rose-200 text-center font-medium">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1.5">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
                 Email or Phone Number
               </label>
               <input
@@ -112,28 +136,48 @@ export default function SignupPage() {
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="Enter your email or phone"
-                className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#005c45]/20 focus:border-[#005c45] transition-all placeholder:text-slate-400"
+                className="w-full bg-slate-50/50 focus:bg-white border border-slate-200 text-slate-900 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#005c45]/20 focus:border-[#005c45] transition-all placeholder:text-slate-400"
               />
             </div>
 
             <div>
-              <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1.5">
+              <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-1.5">
                 Password
               </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Create a password"
-                className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#005c45]/20 focus:border-[#005c45] transition-all placeholder:text-slate-400"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a password"
+                  className="w-full bg-slate-50/50 focus:bg-white border border-slate-200 text-slate-900 text-sm rounded-xl pl-4 pr-11 py-3 focus:outline-none focus:ring-2 focus:ring-[#005c45]/20 focus:border-[#005c45] transition-all placeholder:text-slate-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 cursor-pointer"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#005c45] hover:bg-[#004d3d] active:scale-[0.99] text-white font-medium py-3 rounded-lg text-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-2"
+              className="w-full bg-[#005c45] hover:bg-[#004d3d] active:scale-[0.99] text-white font-semibold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs mt-2"
             >
               <span>{loading ? 'Creating Account…' : 'Get Started'}</span>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -144,11 +188,11 @@ export default function SignupPage() {
           </form>
 
           {/* Divider */}
-          <div className="relative my-7 text-center">
+          <div className="relative my-6 text-center">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-200"></div>
             </div>
-            <span className="relative bg-white px-3 text-xs text-slate-400">
+            <span className="relative bg-white px-3 text-xs text-slate-400 font-medium">
               Or continue with
             </span>
           </div>
@@ -157,7 +201,7 @@ export default function SignupPage() {
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            className="w-full bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 font-medium py-3 rounded-lg text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold py-3 rounded-xl text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path
@@ -181,11 +225,11 @@ export default function SignupPage() {
           </button>
 
           {/* Log In Link */}
-          <p className="text-sm text-slate-500 mt-8 text-center">
+          <p className="text-sm text-slate-500 mt-6 text-center">
             Already have an account?{' '}
-            <a href="/login" className="text-[#005c45] font-semibold hover:underline transition-all">
+            <Link href="/login" className="text-[#005c45] font-bold hover:underline transition-all">
               Log in
-            </a>
+            </Link>
           </p>
         </div>
       </div>
