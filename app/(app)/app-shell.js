@@ -168,8 +168,48 @@ export default function AppShell({
     },
   ];
 
+  // Mobile Bottom Nav specific items
+  const bottomNavItems = [
+    {
+      name: 'Dashboard',
+      href: '/dashboard',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Students',
+      href: '/students',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-5.25 6.557c0 1.58 1.108 2.923 2.625 3.239.38.08.77.126 1.125.132" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Fees',
+      href: '/fees',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5zM3 10.5h18" />
+        </svg>
+      ),
+    },
+    {
+      name: 'Staff',
+      href: '/staff',
+      icon: (
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+        </svg>
+      ),
+    },
+  ];
+
   return (
-    <div className="min-h-screen flex bg-[#f7f9fb] text-slate-900 font-sans antialiased">
+    <div className="min-h-screen flex bg-[#f7f9fb] text-slate-900 font-sans antialiased pb-16 lg:pb-0">
       {mobileMenuOpen && (
         <div
           onClick={() => setMobileMenuOpen(false)}
@@ -270,7 +310,7 @@ export default function AppShell({
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
-        <header className="h-[76px] sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/70 px-4 sm:px-8 flex items-center justify-between gap-4">
+        <header className="h-[76px] sticky top-0 z-30 bg-white/85 backdrop-blur-xl border-b border-slate-200/70 px-4 sm:px-8 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-1 max-w-md">
             <button
               onClick={() => setMobileMenuOpen(true)}
@@ -476,6 +516,27 @@ export default function AppShell({
           {children}
         </main>
       </div>
+
+      {/* Mobile Bottom Navigation Bar (Visible only on mobile / hidden on md+) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/80 px-2 py-2 flex items-center justify-around shadow-lg">
+        {bottomNavItems.map((item) => {
+          const isActive = pathname === item.href;
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
+                isActive ? 'text-[#006c4d] font-bold' : 'text-slate-400 hover:text-slate-700'
+              }`}
+            >
+              <span className={isActive ? 'text-[#006c4d]' : 'text-slate-400'}>
+                {item.icon}
+              </span>
+              <span className="text-[10px] mt-1 font-medium tracking-tight">{item.name}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }

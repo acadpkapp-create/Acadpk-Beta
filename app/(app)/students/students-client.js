@@ -319,73 +319,6 @@ export default function StudentsClient({ instituteId, instituteName }) {
     }, 200);
   }
 
-  // Dynamic Fee Status Toggle Handler (Syncs both students and active month fees table)
-  async function handleToggleFeeStatus(student) {
-    const newStatus = student.fee_status === 'Paid' ? 'Pending' : 'Paid';
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    const { error: updateErr } = await supabase
-      .from('students')
-      .update({ fee_status: newStatus })
-      .eq('id', student.id);
-
-    if (updateErr) {
-      setError(updateErr.message);
-      return;
-    }
-
-    await supabase.from('fees').upsert(
-      {
-        student_id: student.id,
-        academy_id: instituteId,
-        fee_month: currentMonth,
-        status: newStatus.toLowerCase(),
-        amount: student.fee_amount || 0,
-      },
-      { onConflict: 'student_id,fee_month' }
-    );
-
-    setDrawerStudent({ ...student, fee_status: newStatus });
-    loadData();
-  }
-
-  // Monthly Attendance Download Handler
-  async function handleDownloadAttendance(student) {
-    const startOfMonth = monthStart();
-    const { data: attendanceData, error: attErr } = await supabase
-      .from('attendance')
-      .select('date, status, remarks')
-      .eq('student_id', student.id)
-      .gte('date', startOfMonth)
-      .order('date', { ascending: true });
-
-    if (attErr) {
-      alert(`Error fetching attendance: ${attErr.message}`);
-      return;
-    }
-
-    if (!attendanceData || attendanceData.length === 0) {
-      alert('No attendance records found for this month yet.');
-      return;
-    }
-
-    const headers = ['Date,Status,Remarks\n'];
-    const rows = attendanceData.map(
-      (a) => `"${a.date}","${a.status || 'Present'}","${a.remarks || ''}"`
-    );
-
-    const blob = new Blob([headers.concat(rows.join('\n')).join('')], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${student.full_name.replace(/\s+/g, '_')}_Attendance_${new Date().toLocaleDateString('en-US', { month: 'short' })}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
@@ -623,7 +556,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-6 bg-background min-h-screen text-on-surface">
-      {/* Page Header */}
+      {/* Page Header with Both Add Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Students</h1>
@@ -631,13 +564,22 @@ export default function StudentsClient({ instituteId, instituteName }) {
             Manage enrollments, statuses, and profiles &middot; <span className="text-[#006c4d] font-semibold">{instituteName}</span>
           </p>
         </div>
-        <button
-          onClick={() => openAdd()}
-          className="inline-flex items-center justify-center gap-2 bg-[#004b30] hover:bg-[#003823] active:scale-95 text-white font-semibold px-5 py-2.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm"
-        >
-          <IconPlus width={18} height={18} />
-          Add New Student
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={openAddClassModal}
+            className="inline-flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:border-[#006c4d] text-slate-700 hover:text-[#006c4d] font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-2xs"
+          >
+            <IconPlus width={16} height={16} />
+            Add Class
+          </button>
+          <button
+            onClick={() => openAdd()}
+            className="inline-flex items-center justify-center gap-1.5 bg-[#004b30] hover:bg-[#003823] active:scale-95 text-white font-semibold px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-sm"
+          >
+            <IconPlus width={16} height={16} />
+            Add Student
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -646,27 +588,27 @@ export default function StudentsClient({ instituteId, instituteName }) {
         </div>
       )}
 
-      {/* Bento Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Bento Stat Cards - 2 Column Square Grid on Mobile */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <button
           onClick={() => {
             setStatusFilter(null);
             setSelectedClass(null);
             setSearch('');
           }}
-          className={`text-left bg-white border rounded-2xl p-5 shadow-xs transition-all hover:shadow-md cursor-pointer ${
+          className={`text-left bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all hover:shadow-md cursor-pointer ${
             mode === 'grid' ? 'border-[#006c4d] ring-2 ring-[#006c4d]/20' : 'border-slate-200/80'
           }`}
         >
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Students</p>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#006c4d] flex items-center justify-center">
-              <IconUsersStat width={20} height={20} />
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Students</p>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 text-[#006c4d] flex items-center justify-center">
+              <IconUsersStat width={18} height={18} />
             </div>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900">{totalStudents}</p>
-          <p className="text-xs mt-1.5 text-emerald-600 font-medium">
-            {newThisMonth > 0 ? `+${newThisMonth} new this month` : 'All students loaded'}
+          <p className="text-xl sm:text-3xl font-bold text-slate-900">{totalStudents}</p>
+          <p className="text-[10px] sm:text-xs mt-1.5 text-emerald-600 font-medium">
+            {newThisMonth > 0 ? `+${newThisMonth} new this month` : 'All loaded'}
           </p>
         </button>
 
@@ -676,18 +618,18 @@ export default function StudentsClient({ instituteId, instituteName }) {
             setSearch('');
             setStatusFilter((f) => (f === 'Paid' ? null : 'Paid'));
           }}
-          className={`text-left bg-white border rounded-2xl p-5 shadow-xs transition-all hover:shadow-md cursor-pointer ${
+          className={`text-left bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all hover:shadow-md cursor-pointer ${
             statusFilter === 'Paid' ? 'border-[#006c4d] ring-2 ring-[#006c4d]/20' : 'border-slate-200/80'
           }`}
         >
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Fees Paid</p>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#006c4d] flex items-center justify-center">
-              <IconCheckCircle width={20} height={20} />
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Fees Paid</p>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 text-[#006c4d] flex items-center justify-center">
+              <IconCheckCircle width={18} height={18} />
             </div>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900">{paidCount}</p>
-          <p className="text-xs mt-1.5 text-slate-400">Clear accounts</p>
+          <p className="text-xl sm:text-3xl font-bold text-slate-900">{paidCount}</p>
+          <p className="text-[10px] sm:text-xs mt-1.5 text-slate-400">Clear accounts</p>
         </button>
 
         <button
@@ -696,18 +638,18 @@ export default function StudentsClient({ instituteId, instituteName }) {
             setSearch('');
             setStatusFilter((f) => (f === 'Pending' ? null : 'Pending'));
           }}
-          className={`text-left bg-white border rounded-2xl p-5 shadow-xs transition-all hover:shadow-md cursor-pointer ${
+          className={`text-left bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all hover:shadow-md cursor-pointer ${
             statusFilter === 'Pending' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-slate-200/80'
           }`}
         >
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider">Unpaid / Defaulters</p>
-            <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
-              <IconCalendarFlag width={20} height={20} />
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <p className="text-[10px] sm:text-xs font-semibold text-rose-500 uppercase tracking-wider">Unpaid</p>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <IconCalendarFlag width={18} height={18} />
             </div>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-rose-600">{unpaidCount}</p>
-          <p className="text-xs mt-1.5 text-rose-500 font-medium">Requires follow-up</p>
+          <p className="text-xl sm:text-3xl font-bold text-rose-600">{unpaidCount}</p>
+          <p className="text-[10px] sm:text-xs mt-1.5 text-rose-500 font-medium">Follow-up needed</p>
         </button>
 
         <button
@@ -716,16 +658,16 @@ export default function StudentsClient({ instituteId, instituteName }) {
             setSelectedClass(null);
             setSearch('');
           }}
-          className="text-left bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs transition-all hover:shadow-md cursor-pointer"
+          className="text-left bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs transition-all hover:shadow-md cursor-pointer"
         >
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Classes</p>
-            <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
-              <IconBook width={20} height={20} />
+          <div className="flex items-center justify-between mb-2 sm:mb-3">
+            <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Classes</p>
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+              <IconBook width={18} height={18} />
             </div>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900">{totalClasses}</p>
-          <p className="text-xs mt-1.5 text-slate-400">Active grade batches</p>
+          <p className="text-xl sm:text-3xl font-bold text-slate-900">{totalClasses}</p>
+          <p className="text-[10px] sm:text-xs mt-1.5 text-slate-400">Active batches</p>
         </button>
       </div>
 
@@ -741,9 +683,9 @@ export default function StudentsClient({ instituteId, instituteName }) {
         />
       </div>
 
-      {/* Grid View: Classes Overview */}
+      {/* Grid View: Classes Overview - 1 Class Card per Row on Mobile */}
       {mode === 'grid' && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
           {classGroups.map((g) => {
             const c = g.classRow;
             const isFull = c?.capacity && g.students.length >= c.capacity;
@@ -755,14 +697,14 @@ export default function StudentsClient({ instituteId, instituteName }) {
             return (
               <div
                 key={g.key}
-                className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden"
+                className="bg-white border border-slate-200/80 rounded-3xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden"
               >
                 <div>
                   {/* Header: Class Name, Shift & Fee Status Badge */}
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <h3 className="text-xl font-bold text-slate-900 tracking-tight">{g.label}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <h3 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">{g.label}</h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">
                         {g.section ? `Section ${g.section}` : ''}
                         {g.section && g.shift ? ' • ' : ''}
                         {g.shift || ''}
@@ -770,19 +712,19 @@ export default function StudentsClient({ instituteId, instituteName }) {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2">
                       {/* Fee Status Badge from Fee Section */}
                       {allPaid ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-[#006c4d] border border-emerald-200/80">
-                          All Paid ✓
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-semibold bg-emerald-50 text-[#006c4d] border border-emerald-200/80">
+                          Paid ✓
                         </span>
                       ) : hasPending ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-200/80">
-                          Pending Dues
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-200/80">
+                          Pending
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
-                          No Students
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
+                          Empty
                         </span>
                       )}
 
@@ -794,9 +736,9 @@ export default function StudentsClient({ instituteId, instituteName }) {
                               e.stopPropagation();
                               setOpenClassMenuId(openClassMenuId === c.id ? null : c.id);
                             }}
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
+                            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer"
                           >
-                            <IconMoreVertical width={16} height={16} />
+                            <IconMoreVertical width={14} height={14} />
                           </button>
 
                           {openClassMenuId === c.id && (
@@ -830,50 +772,50 @@ export default function StudentsClient({ instituteId, instituteName }) {
                   </div>
 
                   {/* Original Student Details List with Icons */}
-                  <div className="space-y-3.5 my-4 pt-2 border-t border-slate-100 text-xs">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                        <IconUserGroup width={16} height={16} />
+                  <div className="space-y-2.5 sm:space-y-3.5 my-3 sm:my-4 pt-2 border-t border-slate-100 text-[11px] sm:text-xs">
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                        <IconUserGroup width={14} height={14} />
                       </div>
                       <div>
-                        <p className="text-slate-400 text-[10px] uppercase font-semibold">Students</p>
+                        <p className="text-slate-400 text-[9px] sm:text-[10px] uppercase font-semibold">Students</p>
                         <p className="font-semibold text-slate-800">
                           {g.students.length} Enrolled{' '}
-                          {isFull && <span className="text-rose-500 font-normal">(Capacity Reached)</span>}
+                          {isFull && <span className="text-rose-500 font-normal hidden sm:inline">(Capacity Reached)</span>}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                        <IconInstructor width={16} height={16} />
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                        <IconInstructor width={14} height={14} />
                       </div>
                       <div>
-                        <p className="text-slate-400 text-[10px] uppercase font-semibold">Class Teacher</p>
-                        <p className="font-semibold text-slate-800">{g.teacher || 'Not Assigned'}</p>
+                        <p className="text-slate-400 text-[9px] sm:text-[10px] uppercase font-semibold">Teacher</p>
+                        <p className="font-semibold text-slate-800 truncate max-w-[180px] sm:max-w-none">{g.teacher || 'Not Assigned'}</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                        <IconClock width={16} height={16} />
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                        <IconClock width={14} height={14} />
                       </div>
                       <div>
-                        <p className="text-slate-400 text-[10px] uppercase font-semibold">Schedule</p>
-                        <p className="font-semibold text-slate-800">{g.schedule || 'Flexible Schedule'}</p>
+                        <p className="text-slate-400 text-[9px] sm:text-[10px] uppercase font-semibold">Schedule</p>
+                        <p className="font-semibold text-slate-800 truncate max-w-[180px] sm:max-w-none">{g.schedule || 'Flexible'}</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Hybrid Dual CTA Buttons from Reference UI */}
-                <div className="grid grid-cols-2 gap-3 pt-2">
+                {/* Hybrid Dual CTA Buttons */}
+                <div className="grid grid-cols-2 gap-2 sm:gap-3 pt-2">
                   {c ? (
                     <button
                       onClick={() => openEditClassModal(c)}
-                      className="w-full py-2.5 bg-[#004b30] hover:bg-[#003823] active:scale-[0.98] text-white rounded-2xl text-xs font-bold transition-all cursor-pointer shadow-2xs text-center"
+                      className="w-full py-2 sm:py-2.5 bg-[#004b30] hover:bg-[#003823] active:scale-[0.98] text-white rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer shadow-2xs text-center truncate px-1"
                     >
-                      Edit Class
+                      Edit
                     </button>
                   ) : (
                     <div />
@@ -881,7 +823,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
                   <button
                     onClick={() => setSelectedClass(g.key)}
-                    className={`w-full py-2.5 border border-slate-200 hover:border-[#006c4d] rounded-2xl text-xs font-bold text-slate-700 hover:text-[#006c4d] hover:bg-emerald-50/20 transition-all cursor-pointer shadow-2xs text-center ${!c ? 'col-span-2' : ''}`}
+                    className={`w-full py-2 sm:py-2.5 border border-slate-200 hover:border-[#006c4d] rounded-xl sm:rounded-2xl text-[11px] sm:text-xs font-bold text-slate-700 hover:text-[#006c4d] hover:bg-emerald-50/20 transition-all cursor-pointer shadow-2xs text-center ${!c ? 'col-span-2' : ''}`}
                   >
                     View
                   </button>
@@ -892,12 +834,12 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
           <button
             onClick={openAddClassModal}
-            className="flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-3xl p-6 text-slate-400 hover:border-[#006c4d] hover:text-[#006c4d] hover:bg-emerald-50/10 transition-all cursor-pointer min-h-[220px] group"
+            className="flex flex-col items-center justify-center gap-2.5 sm:gap-3 border-2 border-dashed border-slate-200 rounded-3xl p-4 sm:p-6 text-slate-400 hover:border-[#006c4d] hover:text-[#006c4d] hover:bg-emerald-50/10 transition-all cursor-pointer min-h-[180px] sm:min-h-[220px] group"
           >
-            <div className="w-12 h-12 rounded-full border-2 border-dashed border-current flex items-center justify-center group-hover:scale-110 transition-transform">
-              <IconPlus width={20} height={20} />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border-2 border-dashed border-current flex items-center justify-center group-hover:scale-110 transition-transform">
+              <IconPlus width={18} height={18} />
             </div>
-            <span className="text-sm font-bold">Add New Class</span>
+            <span className="text-xs sm:text-sm font-bold">Add New Class</span>
           </button>
         </div>
       )}
@@ -1059,118 +1001,57 @@ export default function StudentsClient({ instituteId, instituteName }) {
               </div>
 
               {drawerMode === 'view' && drawerStudent && (
-                <div className="space-y-5">
+                <div className="space-y-6">
                   <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-emerald-100 text-[#006c4d] flex items-center justify-center font-bold text-xl mx-auto mb-3 shadow-2xs">
+                    <div className="w-20 h-20 rounded-full bg-emerald-100 text-[#006c4d] flex items-center justify-center font-bold text-2xl mx-auto mb-3 shadow-xs">
                       {initials(drawerStudent.full_name)}
                     </div>
-                    <h2 className="text-xl font-bold text-slate-900">{drawerStudent.full_name}</h2>
-                    <p className="text-xs text-slate-400 mt-0.5">Roll #: {drawerStudent.roll_number || 'N/A'}</p>
+                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{drawerStudent.full_name}</h2>
+                    <p className="text-sm font-medium text-slate-500 mt-1">Roll #: {drawerStudent.roll_number || 'N/A'}</p>
                   </div>
 
-                  <div className="bg-slate-50 p-4 rounded-2xl space-y-3 text-xs border border-slate-100">
+                  <div className="bg-slate-50 p-5 rounded-2xl space-y-3.5 text-sm border border-slate-100">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-medium">Class:</span>
-                      <span className="font-semibold text-slate-800">{drawerStudent.class_name || 'General'}</span>
+                      <span className="text-slate-500 font-medium">Class:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.class_name || 'General'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-medium">Parent Name:</span>
-                      <span className="font-semibold text-slate-800">{drawerStudent.parent_name || '—'}</span>
+                      <span className="text-slate-500 font-medium">Parent Name:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.parent_name || '—'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-medium">Parent Phone:</span>
-                      <span className="font-semibold text-slate-800">{drawerStudent.parent_phone || '—'}</span>
+                      <span className="text-slate-500 font-medium">Parent Phone:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.parent_phone || '—'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-medium">Address:</span>
-                      <span className="font-semibold text-slate-800">{drawerStudent.address || '—'}</span>
+                      <span className="text-slate-500 font-medium">Address:</span>
+                      <span className="font-bold text-slate-900 text-right max-w-[200px] truncate">{drawerStudent.address || '—'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-medium">Monthly Fee:</span>
-                      <span className="font-semibold text-[#006c4d]">Rs. {drawerStudent.fee_amount || 0}</span>
+                      <span className="text-slate-500 font-medium">Monthly Fee:</span>
+                      <span className="font-bold text-[#006c4d] text-base">Rs. {drawerStudent.fee_amount || 0}</span>
                     </div>
 
-                    <div className="flex justify-between items-center pt-2 border-t border-slate-200/60">
-                      <span className="text-slate-400 font-medium">Fee Status:</span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${STATUS_STYLES[drawerStudent.fee_status || 'Paid']}`}>
+                    <div className="flex justify-between items-center pt-2.5 border-t border-slate-200/60">
+                      <span className="text-slate-500 font-medium">Fee Status:</span>
+                      {/* STATIC READ-ONLY BADGE */}
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${STATUS_STYLES[drawerStudent.fee_status || 'Paid']}`}>
                         {drawerStudent.fee_status || 'Paid'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Monthly Attendance Meter & Report Actions */}
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-800">Attendance This Month</span>
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                        {new Date().toLocaleDateString('en-US', { month: 'long' }).toUpperCase()}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4 pt-1">
-                      <div className="relative w-16 h-16 shrink-0 flex items-center justify-center">
-                        <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
-                          <path
-                            className="text-slate-100"
-                            strokeWidth="3.5"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                          <path
-                            className="text-[#006c4d]"
-                            strokeDasharray={`${drawerStudent.attendance_percentage || 85}, 100`}
-                            strokeWidth="3.5"
-                            strokeLinecap="round"
-                            stroke="currentColor"
-                            fill="none"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          />
-                        </svg>
-                        <div className="absolute text-xs font-bold text-slate-800">
-                          {drawerStudent.attendance_percentage || 85}%
-                        </div>
-                      </div>
-
-                      <div className="flex-1 space-y-2">
-                        <button
-                          onClick={() => router.push(`/attendance?studentId=${drawerStudent.id}`)}
-                          className="w-full py-1.5 px-3 rounded-xl border border-slate-200 text-slate-700 font-semibold text-[11px] hover:bg-slate-50 transition-colors cursor-pointer text-center block"
-                        >
-                          View Attendance Sheet
-                        </button>
-                        <button
-                          onClick={() => handleDownloadAttendance(drawerStudent)}
-                          className="w-full py-1.5 px-3 rounded-xl bg-emerald-50 text-[#006c4d] border border-emerald-200/80 font-semibold text-[11px] hover:bg-emerald-100 transition-colors cursor-pointer text-center block"
-                        >
-                          Download Report (CSV)
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Dynamic Fee Status Toggle Button */}
-                  <button
-                    onClick={() => handleToggleFeeStatus(drawerStudent)}
-                    className={`w-full py-2.5 rounded-xl font-semibold text-xs transition-all cursor-pointer shadow-2xs ${
-                      drawerStudent.fee_status === 'Paid'
-                        ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100'
-                        : 'bg-emerald-50 text-[#006c4d] border border-emerald-200 hover:bg-emerald-100'
-                    }`}
-                  >
-                    {drawerStudent.fee_status === 'Paid' ? 'Mark Fee as Pending' : 'Mark Fee as Paid'}
-                  </button>
-
-                  <div className="flex gap-3 pt-1">
+                  {/* Actions Row */}
+                  <div className="flex gap-3 pt-2">
                     <button
                       onClick={() => openEdit(drawerStudent)}
-                      className="flex-1 bg-[#004b30] text-white py-2.5 rounded-xl font-semibold text-xs hover:bg-[#003823] cursor-pointer shadow-sm transition-colors"
+                      className="flex-1 bg-[#004b30] text-white py-3 rounded-xl font-bold text-sm hover:bg-[#003823] cursor-pointer shadow-sm transition-colors text-center"
                     >
                       Edit Profile
                     </button>
                     <button
                       onClick={() => handleDelete(drawerStudent.id)}
-                      className="px-4 py-2.5 text-rose-600 border border-rose-200 rounded-xl font-semibold text-xs hover:bg-rose-50 cursor-pointer transition-colors"
+                      className="px-5 py-3 text-rose-600 border border-rose-200 rounded-xl font-bold text-sm hover:bg-rose-50 cursor-pointer transition-colors"
                     >
                       Delete
                     </button>

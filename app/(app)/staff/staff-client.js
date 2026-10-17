@@ -269,18 +269,18 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
         </button>
       </div>
 
-      {/* Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+      {/* Overview Stat Cards - 2 Column Square Grid on Mobile */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xs">
-          <p className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase">Total Staff Members</p>
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Total Staff Members</p>
           <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{staffList.length}</p>
         </div>
         <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xs">
-          <p className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase">Active on Duty</p>
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Active on Duty</p>
           <p className="text-xl sm:text-2xl font-bold text-[#006c4d] mt-1">{activeCount}</p>
         </div>
-        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xs">
-          <p className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase">Total Monthly Payroll</p>
+        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xs col-span-2 lg:col-span-1">
+          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Total Monthly Payroll</p>
           <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">PKR {totalPayroll.toLocaleString()}</p>
         </div>
       </div>

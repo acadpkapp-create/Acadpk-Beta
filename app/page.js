@@ -197,12 +197,20 @@ export default function Home() {
             </a>
           </nav>
 
-          <a
-            href="/signup"
-            className="bg-[#004d3d] hover:bg-[#00382c] active:scale-[0.97] text-white text-sm font-semibold px-5 py-2.5 rounded-full transition-all shadow-sm hover:shadow"
-          >
-            Get Started
-          </a>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <a
+              href="/login"
+              className="md:hidden text-xs sm:text-sm font-semibold text-slate-700 hover:text-[#004d3d] transition-colors px-2 py-1"
+            >
+              Log in
+            </a>
+            <a
+              href="/signup"
+              className="bg-[#004d3d] hover:bg-[#00382c] active:scale-[0.97] text-white text-xs sm:text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-full transition-all shadow-sm hover:shadow"
+            >
+              Get Started
+            </a>
+          </div>
         </div>
       </header>
 
