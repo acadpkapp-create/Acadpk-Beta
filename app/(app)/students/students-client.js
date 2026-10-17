@@ -213,12 +213,29 @@ export default function StudentsClient({ instituteId, instituteName }) {
     setLoading(true);
     setError('');
 
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     const [
       { data: studentData, error: studentErr },
       { data: classData, error: classErr },
+      { data: feesData, error: feesErr },
     ] = await Promise.all([
-      supabase.from('students').select('*').eq('institute_id', instituteId).order('full_name', { ascending: true }),
-      supabase.from('classes').select('*').eq('institute_id', instituteId).order('name', { ascending: true }),
+      supabase
+        .from('students')
+        .select('*')
+        .eq('institute_id', instituteId)
+        .order('full_name', { ascending: true }),
+      supabase
+        .from('classes')
+        .select('*')
+        .eq('institute_id', instituteId)
+        .order('name', { ascending: true }),
+      supabase
+        .from('fees')
+        .select('student_id, status')
+        .eq('fee_month', currentMonth)
+        .eq('academy_id', instituteId),
     ]);
 
     setLoading(false);
@@ -228,11 +245,31 @@ export default function StudentsClient({ instituteId, instituteName }) {
       return;
     }
 
-    setStudents(studentData || []);
+    // Map fee ledger status onto student records for real-time synchronization
+    const feeMap = {};
+    if (!feesErr && feesData) {
+      feesData.forEach((f) => {
+        feeMap[f.student_id] = f.status;
+      });
+    }
+
+    const mergedStudents = (studentData || []).map((s) => {
+      const liveStatus = feeMap[s.id];
+      let normalizedStatus = s.fee_status || 'Pending';
+      if (liveStatus) {
+        normalizedStatus = liveStatus.toLowerCase() === 'paid' ? 'Paid' : 'Pending';
+      }
+      return {
+        ...s,
+        fee_status: normalizedStatus,
+      };
+    });
+
+    setStudents(mergedStudents);
     if (!classErr && classData) setClasses(classData);
 
     if (drawerStudent) {
-      const updated = studentData?.find((s) => s.id === drawerStudent.id);
+      const updated = mergedStudents.find((s) => s.id === drawerStudent.id);
       if (updated) setDrawerStudent(updated);
     }
   }
@@ -282,9 +319,12 @@ export default function StudentsClient({ instituteId, instituteName }) {
     }, 200);
   }
 
-  // Dynamic Fee Status Toggle Handler
+  // Dynamic Fee Status Toggle Handler (Syncs both students and active month fees table)
   async function handleToggleFeeStatus(student) {
     const newStatus = student.fee_status === 'Paid' ? 'Pending' : 'Paid';
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     const { error: updateErr } = await supabase
       .from('students')
       .update({ fee_status: newStatus })
@@ -294,6 +334,17 @@ export default function StudentsClient({ instituteId, instituteName }) {
       setError(updateErr.message);
       return;
     }
+
+    await supabase.from('fees').upsert(
+      {
+        student_id: student.id,
+        academy_id: instituteId,
+        fee_month: currentMonth,
+        status: newStatus.toLowerCase(),
+        amount: student.fee_amount || 0,
+      },
+      { onConflict: 'student_id,fee_month' }
+    );
 
     setDrawerStudent({ ...student, fee_status: newStatus });
     loadData();
@@ -697,12 +748,17 @@ export default function StudentsClient({ instituteId, instituteName }) {
             const c = g.classRow;
             const isFull = c?.capacity && g.students.length >= c.capacity;
 
+            // Check fee status for badge display
+            const allPaid = g.students.length > 0 && g.students.every((s) => s.fee_status === 'Paid');
+            const hasPending = g.students.some((s) => s.fee_status !== 'Paid');
+
             return (
               <div
                 key={g.key}
                 className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden"
               >
                 <div>
+                  {/* Header: Class Name, Shift & Fee Status Badge */}
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <h3 className="text-xl font-bold text-slate-900 tracking-tight">{g.label}</h3>
@@ -714,7 +770,23 @@ export default function StudentsClient({ instituteId, instituteName }) {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
+                      {/* Fee Status Badge from Fee Section */}
+                      {allPaid ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-[#006c4d] border border-emerald-200/80">
+                          All Paid ✓
+                        </span>
+                      ) : hasPending ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-200/80">
+                          Pending Dues
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
+                          No Students
+                        </span>
+                      )}
+
+                      {/* Options Menu */}
                       {c && (
                         <div className="relative">
                           <button
@@ -757,6 +829,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
                     </div>
                   </div>
 
+                  {/* Original Student Details List with Icons */}
                   <div className="space-y-3.5 my-4 pt-2 border-t border-slate-100 text-xs">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
@@ -793,10 +866,22 @@ export default function StudentsClient({ instituteId, instituteName }) {
                   </div>
                 </div>
 
-                <div className="pt-2">
+                {/* Hybrid Dual CTA Buttons from Reference UI */}
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  {c ? (
+                    <button
+                      onClick={() => openEditClassModal(c)}
+                      className="w-full py-2.5 bg-[#004b30] hover:bg-[#003823] active:scale-[0.98] text-white rounded-2xl text-xs font-bold transition-all cursor-pointer shadow-2xs text-center"
+                    >
+                      Edit Class
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+
                   <button
                     onClick={() => setSelectedClass(g.key)}
-                    className="w-full py-2.5 border border-slate-200 hover:border-[#006c4d] rounded-2xl text-xs font-bold text-slate-700 hover:text-[#006c4d] hover:bg-emerald-50/20 transition-all cursor-pointer shadow-2xs"
+                    className={`w-full py-2.5 border border-slate-200 hover:border-[#006c4d] rounded-2xl text-xs font-bold text-slate-700 hover:text-[#006c4d] hover:bg-emerald-50/20 transition-all cursor-pointer shadow-2xs text-center ${!c ? 'col-span-2' : ''}`}
                   >
                     View
                   </button>

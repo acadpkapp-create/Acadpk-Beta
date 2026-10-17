@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState({
     totalStudents: 0,
     activeClasses: 0,
+    totalStaff: 0,
     monthRevenue: 0,
     feeRemaining: 0,
     collectionPercentage: 0,
@@ -69,16 +70,18 @@ export default function DashboardPage() {
       setInstitute(instData);
       const currentMonth = currentMonthStr();
 
-      // Fetch Classes list, Students, and Month-specific Fees in parallel
-      const [clsRes, studentRes, feeRes] = await Promise.all([
+      // Fetch Classes list, Students, Month-specific Fees, and Staff count in parallel
+      const [clsRes, studentRes, feeRes, staffRes] = await Promise.all([
         supabase.from('classes').select('*').eq('institute_id', instData.id).order('name', { ascending: true }),
         supabase.from('students').select('*').eq('institute_id', instData.id).order('created_at', { ascending: false }),
         supabase.from('fees').select('*').eq('fee_month', currentMonth),
+        supabase.from('staff').select('id', { count: 'exact', head: true }).eq('institute_id', instData.id),
       ]);
 
       const classesData = clsRes.data || [];
       const studentsData = studentRes.data || [];
       const feesData = feeRes.data || [];
+      const staffCount = staffRes.count || 0;
 
       if (classesData) setClassesList(classesData);
 
@@ -110,6 +113,7 @@ export default function DashboardPage() {
       setStats({
         totalStudents: totalStudentsCount,
         activeClasses: classesData.length,
+        totalStaff: staffCount,
         monthRevenue,
         feeRemaining,
         collectionPercentage,
@@ -353,70 +357,99 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {/* Stat cards: 2 columns on mobile, 5 columns on desktop with full comfortable padding and fonts */}
+      <section className="grid grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
         <div
           onClick={() => router.push('/students')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group"
+          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
         >
-          <div className="flex justify-between items-start mb-3">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-[#006c4d] group-hover:scale-105 transition-transform">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6 0 3.375 3.375 0 016 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-              </svg>
+          <div>
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-[#006c4d] group-hover:scale-105 transition-transform">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6 0 3.375 3.375 0 016 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                </svg>
+              </div>
+              <span className="text-[10px] font-bold text-[#006c4d] bg-emerald-50 uppercase tracking-wider px-2.5 py-1 rounded-full border border-emerald-200">
+                Live
+              </span>
             </div>
-            <span className="text-[10px] font-bold text-[#006c4d] bg-emerald-50 uppercase tracking-wider px-2.5 py-1 rounded-full border border-emerald-200">
-              Live
-            </span>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Students</p>
           </div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Students</p>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900">{loading ? '...' : stats.totalStudents.toLocaleString()}</p>
+          <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : stats.totalStudents.toLocaleString()}</p>
         </div>
 
         <div
           onClick={() => router.push('/classes')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group"
+          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
         >
-          <div className="flex justify-between items-start mb-3">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-[#006c4d] group-hover:scale-105 transition-transform">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-              </svg>
+          <div>
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-600 group-hover:scale-105 transition-transform">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
+              </div>
             </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{groupLabel}</p>
           </div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{groupLabel}</p>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900">{loading ? '...' : stats.activeClasses}</p>
+          <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : stats.activeClasses}</p>
+        </div>
+
+        <div
+          onClick={() => router.push('/staff')}
+          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
+        >
+          <div>
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:scale-105 transition-transform">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Staff</p>
+          </div>
+          <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : stats.totalStaff}</p>
         </div>
 
         <div
           onClick={() => router.push('/fees?filter=paid')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group"
+          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
         >
-          <div className="flex justify-between items-start mb-3">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-[#006c4d] group-hover:scale-105 transition-transform">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5zM3 10.5h18" />
-              </svg>
+          <div>
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-700 group-hover:scale-105 transition-transform">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5zM3 10.5h18" />
+                </svg>
+              </div>
             </div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Revenue (Month)</p>
           </div>
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Revenue (Month)</p>
-          <p className="text-2xl sm:text-3xl font-bold text-slate-900">
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 truncate mt-2">
             {loading ? '...' : `Rs. ${stats.monthRevenue.toLocaleString()}`}
           </p>
         </div>
 
         <div
           onClick={() => router.push('/fees?filter=due')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-rose-200 shadow-xs hover:shadow-md hover:border-rose-400 transition-all cursor-pointer group"
+          className="bg-white rounded-2xl p-5 sm:p-6 border border-rose-200 shadow-xs hover:shadow-md hover:border-rose-400 transition-all cursor-pointer group flex flex-col justify-between col-span-2 lg:col-span-1"
         >
-          <div className="flex justify-between items-start mb-3">
-            <div className="w-11 h-11 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:scale-105 transition-transform">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-              </svg>
+          <div>
+            <div className="flex justify-between items-start mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:scale-105 transition-transform">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+              </div>
             </div>
+            <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-1">Fee Remaining</p>
           </div>
-          <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-1">Fee Remaining</p>
-          <p className="text-2xl sm:text-3xl font-bold text-rose-600">
+          <p className="text-xl sm:text-2xl font-bold text-rose-600 truncate mt-2">
             {loading ? '...' : `Rs. ${stats.feeRemaining.toLocaleString()}`}
           </p>
         </div>
@@ -719,7 +752,7 @@ export default function DashboardPage() {
                     className={`py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                       exportConfig.format === 'print'
                         ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     Print / PDF Document

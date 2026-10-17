@@ -40,6 +40,17 @@ function IconClasses(props) {
   );
 }
 
+function IconStaff(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function IconRevenue(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
@@ -132,15 +143,17 @@ function toCSV(rows) {
 
 function StatCard({ icon: Icon, iconBg, iconColor, label, value, trend }) {
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-      <div className="flex items-start justify-between mb-4">
+    <div className="bg-white border border-gray-100 rounded-2xl shadow-xs p-5 hover:shadow-md transition-all duration-200 flex flex-col justify-between aspect-square sm:aspect-auto">
+      <div className="flex items-start justify-between mb-2">
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconBg} ${iconColor}`}>
           <Icon width={18} height={18} />
         </div>
         {trend}
       </div>
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="font-display text-2xl font-bold text-gray-900 mt-0.5">{value}</p>
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+        <p className="font-display text-xl sm:text-2xl font-bold text-gray-900 mt-1">{value}</p>
+      </div>
     </div>
   );
 }
@@ -165,11 +178,13 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
 
   const needsAttention = stats.overdueCount > 0;
 
-  // New Admission Modal & Classes State
+  // New Admission Modal & Staff / Classes State
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [classesList, setClassesList] = useState([]);
+  const [staffCount, setStaffCount] = useState(stats.totalStaff || 0);
+
   const [formData, setFormData] = useState({
     fullName: '',
     className: 'General',
@@ -180,9 +195,9 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
     feeStatus: 'Paid',
   });
 
-  // Fetch classes list for the dropdown when modal opens or component mounts
+  // Fetch classes and staff count when component mounts
   useEffect(() => {
-    async function fetchClasses() {
+    async function fetchData() {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -194,15 +209,26 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
         .maybeSingle();
 
       if (inst) {
+        // Fetch classes list
         const { data: cls } = await supabase
           .from('classes')
           .select('*')
           .eq('institute_id', inst.id)
           .order('name', { ascending: true });
         if (cls) setClassesList(cls);
+
+        // Fetch staff count if not provided directly in props
+        const { count: staffC } = await supabase
+          .from('staff')
+          .select('id', { count: 'exact', head: true })
+          .eq('institute_id', inst.id);
+
+        if (staffC !== null && staffC !== undefined) {
+          setStaffCount(staffC);
+        }
       }
     }
-    fetchClasses();
+    fetchData();
   }, []);
 
   function handleNewAdmission() {
@@ -308,9 +334,9 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
       : donutCircumference * (1 - stats.collectionRate / 100);
 
   return (
-    <div>
+    <div className="space-y-6">
       {/* Hero banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-50 via-white to-teal-50 border border-gray-100 p-6 md:p-8 mb-6">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-50 via-white to-teal-50 border border-gray-100 p-6 md:p-8">
         <div
           className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-100/60 blur-2xl"
           aria-hidden="true"
@@ -342,14 +368,14 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           <div className="flex flex-wrap gap-3">
             <button
               onClick={handleNewAdmission}
-              className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer shadow-xs"
             >
               <IconPlus width={16} height={16} />
               New Admission
             </button>
             <button
               onClick={handleExport}
-              className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 active:scale-95 text-gray-700 font-medium px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer"
+              className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 active:scale-95 text-gray-700 font-medium px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer shadow-xs"
             >
               <IconDownload width={16} height={16} />
               Export Report
@@ -358,8 +384,8 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* Stat cards: Square Grid on Mobile (2 cols), Row/Standard on Desktop (lg:grid-cols-5) */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           icon={IconStudents}
           iconBg="bg-brand-50"
@@ -374,6 +400,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
             ) : null
           }
         />
+
         <StatCard
           icon={IconClasses}
           iconBg="bg-sky-50"
@@ -381,6 +408,15 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           label="Active Classes"
           value={stats.activeClasses}
         />
+
+        <StatCard
+          icon={IconStaff}
+          iconBg="bg-indigo-50"
+          iconColor="text-indigo-600"
+          label="Total Staff"
+          value={staffCount}
+        />
+
         <StatCard
           icon={IconRevenue}
           iconBg="bg-teal-50"
@@ -389,6 +425,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           value={`Rs. ${stats.revenueThisMonth.toLocaleString()}`}
           trend={<Trend pct={stats.revenueChangePct} />}
         />
+
         <StatCard
           icon={IconWarning}
           iconBg="bg-rose-50"
