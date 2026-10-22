@@ -55,7 +55,6 @@ export default function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (user) {
-      // Fetch user institute without auto-creating fallback records
       let { data: instData } = await supabase
         .from('institutes')
         .select('id, name, type')
@@ -70,7 +69,6 @@ export default function DashboardPage() {
       setInstitute(instData);
       const currentMonth = currentMonthStr();
 
-      // Fetch Classes list, Students, Month-specific Fees, and Staff count in parallel
       const [clsRes, studentRes, feeRes, staffRes] = await Promise.all([
         supabase.from('classes').select('*').eq('institute_id', instData.id).order('name', { ascending: true }),
         supabase.from('students').select('*').eq('institute_id', instData.id).order('created_at', { ascending: false }),
@@ -357,7 +355,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Stat cards: 2 columns on mobile, 5 columns on desktop with full comfortable padding and fonts */}
+      {/* Stat cards: 2 columns on mobile, 5 columns on desktop */}
       <section className="grid grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
         <div
           onClick={() => router.push('/students')}
@@ -455,6 +453,41 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* MINIMAL OWNER OVERVIEW WITH EXPLANATORY NARRATIVE */}
+      <section>
+        <div className="bg-[#004b30] text-white rounded-2xl sm:rounded-3xl shadow-xs p-6 sm:p-8 flex flex-col justify-between space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-emerald-800/85">
+            <div>
+              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-300 bg-emerald-900/60 px-3 py-1 rounded-md">
+                Owner Overview
+              </span>
+              <h3 className="text-xl font-bold mt-2">Institute Status & Activity</h3>
+            </div>
+            <button
+              onClick={() => router.push('/analytics')}
+              className="self-start sm:self-auto px-4 py-2 bg-emerald-900/80 hover:bg-emerald-900 text-white font-semibold text-xs rounded-xl transition-all border border-emerald-700/60 shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Deep Analytics</span>
+              <span>&rarr;</span>
+            </button>
+          </div>
+
+          <div className="space-y-2 text-xs sm:text-sm text-emerald-100 leading-relaxed pt-1">
+            <p>
+              Your academy is currently operating with <strong>{stats.totalStudents} active students</strong> distributed across {stats.activeClasses} active classes, supported by {stats.totalStaff} staff members.
+            </p>
+            <p>
+              {stats.feeRemaining > 0 ? (
+                <>Fee collection efficiency stands at <strong>{stats.collectionPercentage}%</strong> for this month, with <strong>Rs. {stats.feeRemaining.toLocaleString()}</strong> remaining in pending dues that require follow-up.</>
+              ) : (
+                <>Great news! All monthly fee vouchers have been successfully collected with zero pending dues.</>
+              )}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Collection rate + recent admissions */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="bg-white rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-center border border-slate-200/80 shadow-xs">
           <div className="relative z-10 w-full">

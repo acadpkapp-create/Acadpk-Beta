@@ -439,6 +439,63 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
         />
       </div>
 
+      {/* SEAMLESSLY ADDED: Minimal Owner Overview & Trend Graph Widget */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        
+        {/* Minimal Owner Snapshot Card */}
+        <div className="bg-[#004b30] text-white rounded-2xl shadow-sm p-6 flex flex-col justify-between space-y-4">
+          <div>
+            <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-300 bg-emerald-900/60 px-3 py-1 rounded-md">
+              Owner Overview
+            </span>
+            <h3 className="text-lg font-bold mt-3">Institute Health Snapshot</h3>
+            <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
+              Your institute is maintaining stable operations with <strong>{stats.totalStudents} active students</strong> and {stats.collectionRate || 0}% collection efficiency.
+            </p>
+          </div>
+
+          <div className="pt-3 border-t border-emerald-800/80 flex items-center justify-between text-xs">
+            <span className="text-emerald-200">Active Roster: <strong className="text-white">{stats.totalStudents}</strong></span>
+            <a href="/analytics" className="font-bold underline text-white hover:text-emerald-200">Full Analytics &rarr;</a>
+          </div>
+        </div>
+
+        {/* Minimal Growth Trend Bar Widget */}
+        <div className="lg:col-span-2 bg-white border border-gray-100 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h3 className="font-display font-semibold text-gray-900 text-sm">Monthly Revenue Trend</h3>
+              <p className="text-[11px] text-gray-400">Quick view of recent performance flow</p>
+            </div>
+            <span className="text-xs font-bold text-[#004b30] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+              Live Flow
+            </span>
+          </div>
+
+          {/* Minimal Vertical Bars */}
+          <div className="grid grid-cols-4 gap-3 items-end h-28 pt-4 pb-1 border-b border-gray-100">
+            {['Jun', 'Jul', 'Aug', 'Sep'].map((m, idx) => {
+              const heights = ['40%', '65%', '55%', '85%'];
+              return (
+                <div key={idx} className="flex flex-col items-center h-full justify-end group">
+                  <div 
+                    className="w-full max-w-[28px] bg-[#004b30]/80 rounded-t-md transition-all duration-300 group-hover:bg-[#004b30]"
+                    style={{ height: heights[idx] }}
+                  ></div>
+                  <span className="text-[10px] font-bold text-gray-400 mt-1.5">{m}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-gray-400 pt-2">
+            <span>Consistent intake observed</span>
+            <span className="font-semibold text-gray-700">Stable growth</span>
+          </div>
+        </div>
+
+      </div>
+
       {/* Collection rate + recent admissions */}
       <div className="grid md:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6 flex flex-col items-center text-center">

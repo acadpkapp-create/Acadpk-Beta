@@ -83,11 +83,13 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
     email: '',
     qualification: '',
     salary: '',
+    pinCode: '',
     status: 'Active',
     joiningDate: new Date().toISOString().slice(0, 10),
   });
+  const [formSelectedClasses, setFormSelectedClasses] = useState([]);
 
-  // View / Edit & Multi-Class Assignment State
+  // View / Edit & Multi-Class & PIN State
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -96,8 +98,8 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
   // Fetch available classes on mount
   useEffect(() => {
     async function fetchClasses() {
-      const { data } = await supabase.from('classes').select('id, name, section').order('name', { ascending: true });
-      if (data) setClassesList(data);
+      const { data: classesData } = await supabase.from('classes').select('id, name, section').order('name', { ascending: true });
+      if (classesData) setClassesList(classesData);
     }
     fetchClasses();
   }, []);
@@ -154,6 +156,8 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
       status: formData.status,
       salary_status: 'Unpaid',
       joining_date: formData.joiningDate,
+      pin_code: formData.pinCode.trim() || null,
+      assigned_classes: formSelectedClasses.join(', '),
     };
 
     const { data, error } = await supabase.from('staff').insert([payload]).select().single();
@@ -176,9 +180,11 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
       email: '',
       qualification: '',
       salary: '',
+      pinCode: '',
       status: 'Active',
       joiningDate: new Date().toISOString().slice(0, 10),
     });
+    setFormSelectedClasses([]);
     router.refresh();
   }
 
@@ -193,16 +199,20 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
     await supabase.from('staff').update({ salary_status: newStatus }).eq('id', staff.id);
   }
 
-  // Toggle individual class selection in multi-select
-  function toggleClassSelection(className) {
-    if (selectedClasses.includes(className)) {
-      setSelectedClasses(selectedClasses.filter((c) => c !== className));
+  // Toggle selections
+  function toggleClassSelection(className, isForm = false) {
+    if (isForm) {
+      setFormSelectedClasses(prev => 
+        prev.includes(className) ? prev.filter(c => c !== className) : [...prev, className]
+      );
     } else {
-      setSelectedClasses([...selectedClasses, className]);
+      setSelectedClasses(prev => 
+        prev.includes(className) ? prev.filter(c => c !== className) : [...prev, className]
+      );
     }
   }
 
-  // Save Edit & Multi-Class Assignments
+  // Save Edit & Multi-Class & PIN Assignments
   async function handleSaveEdits(e) {
     e.preventDefault();
     if (!selectedStaff) return;
@@ -218,6 +228,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
       qualification: selectedStaff.qualification,
       salary: Number(selectedStaff.salary) || 0,
       status: selectedStaff.status,
+      pin_code: selectedStaff.pin_code?.trim() || null,
       assigned_classes: classesString,
     };
 
@@ -231,7 +242,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
 
     setStaffList((prev) => prev.map((s) => (s.id === selectedStaff.id ? { ...s, ...updates } : s)));
     setIsEditing(false);
-    alert('Staff profile & class assignments updated successfully!');
+    alert('Staff profile, PIN & classes updated successfully!');
   }
 
   async function handleDeleteStaff(id) {
@@ -269,7 +280,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
         </button>
       </div>
 
-      {/* Overview Stat Cards - 2 Column Square Grid on Mobile */}
+      {/* Overview Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-2xs">
           <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Total Staff Members</p>
@@ -349,9 +360,9 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                           <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-[#006c4d] text-[10px] font-bold border border-emerald-200">
                             {staff.role}
                           </span>
-                          {staff.qualification && (
-                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-semibold truncate max-w-[120px]">
-                              {staff.qualification}
+                          {staff.pin_code && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-mono font-bold border border-amber-200">
+                              PIN: {staff.pin_code}
                             </span>
                           )}
                         </div>
@@ -390,7 +401,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                             }}
                             className="w-full text-left px-3 py-2 text-slate-700 hover:bg-slate-50 font-semibold"
                           >
-                            Edit Profile
+                            Edit Profile & PIN
                           </button>
                           <button
                             onClick={() => {
@@ -468,7 +479,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
         </div>
       )}
 
-      {/* VIEW / EDIT & MULTI-CLASS ASSIGNMENT MODAL */}
+      {/* VIEW / EDIT & MULTI-CLASS & PIN MODAL */}
       {viewModalOpen && selectedStaff && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg p-5 sm:p-7 relative max-h-[90vh] overflow-y-auto animate-fade-in">
@@ -528,6 +539,20 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                   </div>
                 </div>
 
+                {/* UNIVERSAL 4-DIGIT PIN CODE FOR ALL STAFF */}
+                <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-1.5">
+                  <label className="block text-xs font-bold text-[#004b30]">Staff 4-Digit Access PIN Code (Optional)</label>
+                  <input
+                    type="text"
+                    maxLength={4}
+                    value={selectedStaff.pin_code || ''}
+                    onChange={(e) => setSelectedStaff({ ...selectedStaff, pin_code: e.target.value })}
+                    placeholder="e.g. 4821"
+                    className="w-full px-4 py-2 rounded-xl border border-emerald-300 text-xs sm:text-sm outline-none focus:border-[#006c4d] bg-white font-mono font-bold tracking-widest text-[#004b30]"
+                  />
+                  <p className="text-[10px] text-slate-500">Used for quick mobile portal access (e.g. attendance, fee logs).</p>
+                </div>
+
                 {/* MULTI-CLASS ASSIGNMENT CHECKBOXES */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">Assign Classes (Select multiple)</label>
@@ -548,7 +573,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => toggleClassSelection(c.name)}
+                              onChange={() => toggleClassSelection(c.name, false)}
                               className="rounded border-slate-300 text-[#004b30] focus:ring-[#004b30] cursor-pointer w-4 h-4"
                             />
                           </label>
@@ -603,6 +628,12 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                     <span className="text-slate-400">Qualification:</span>
                     <span className="font-bold text-slate-800">{selectedStaff.qualification || 'Not specified'}</span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Access PIN:</span>
+                    <span className="font-mono font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                      {selectedStaff.pin_code || 'Not set'}
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Phone Number:</span>
                     <span className="font-semibold">{selectedStaff.phone || 'N/A'}</span>
@@ -633,7 +664,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                 <div className="p-3.5 rounded-2xl border border-slate-200 bg-white space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-slate-800">Assigned Classes:</span>
-                    <span className="px-2.5 py-1 bg-emerald-50 text-[#006c4d] rounded-lg font-bold text-right">
+                    <span className="px-2.5 py-1 bg-emerald-50 text-[#004b30] rounded-lg font-bold text-right">
                       {selectedStaff.assigned_classes || 'None assigned'}
                     </span>
                   </div>
@@ -651,7 +682,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                     onClick={() => setIsEditing(true)}
                     className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#004b30] text-white font-bold text-xs hover:bg-[#003823]"
                   >
-                    Edit Profile & Assign Classes
+                    Edit Profile, PIN & Classes
                   </button>
                 </div>
               </div>
@@ -711,8 +742,47 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                     value={formData.qualification}
                     onChange={(e) => setFormData({ ...formData, qualification: e.target.value })}
                     placeholder="e.g. M.Sc Mathematics / B.Ed"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm outline-none focus:border-[#006c4d]"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm outline-none focus:border-[#006c4d]"
                   />
+                </div>
+              </div>
+
+              {/* UNIVERSAL PIN CODE INPUT FOR ALL STAFF */}
+              <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-1.5">
+                <label className="block text-xs font-bold text-[#004b30]">Staff 4-Digit Access PIN Code (Optional)</label>
+                <input
+                  type="text"
+                  maxLength={4}
+                  value={formData.pinCode}
+                  onChange={(e) => setFormData({ ...formData, pinCode: e.target.value })}
+                  placeholder="e.g. 4821"
+                  className="w-full px-4 py-2.5 rounded-xl border border-emerald-300 text-xs sm:text-sm outline-none focus:border-[#006c4d] bg-white font-mono font-bold tracking-widest text-[#004b30]"
+                />
+                <p className="text-[10px] text-slate-500">Used for quick mobile portal access (e.g. attendance, fee logs).</p>
+              </div>
+
+              {/* MULTI-CLASS ASSIGNMENT CHECKBOXES FOR ADD MODAL */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Assign Classes (Optional)</label>
+                <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1 bg-slate-50/50">
+                  {classesList.length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-1">No classes available.</p>
+                  ) : (
+                    classesList.map((c) => {
+                      const isSelected = formSelectedClasses.includes(c.name);
+                      return (
+                        <label key={c.id} className="flex items-center justify-between p-1.5 rounded hover:bg-white text-xs cursor-pointer">
+                          <span>{c.name} {c.section ? `(${c.section})` : ''}</span>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleClassSelection(c.name, true)}
+                            className="rounded border-slate-300 text-[#004b30] focus:ring-[#004b30] w-3.5 h-3.5 cursor-pointer"
+                          />
+                        </label>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 

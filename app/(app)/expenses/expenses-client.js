@@ -15,7 +15,6 @@ export default function ExpensesClient({ instituteId, instituteName }) {
   const [month, setMonth] = useState(currentMonthStr());
   const [expenses, setExpenses] = useState([]);
   const [staffList, setStaffList] = useState([]);
-  const [feesList, setFeesList] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // New expense form state
@@ -30,15 +29,13 @@ export default function ExpensesClient({ instituteId, instituteName }) {
     setLoading(true);
 
     try {
-      const [expRes, staffRes, feeRes] = await Promise.all([
+      const [expRes, staffRes] = await Promise.all([
         supabase.from('expenses').select('*').eq('institute_id', instituteId).order('expense_date', { ascending: false }),
         supabase.from('staff').select('*').eq('institute_id', instituteId),
-        supabase.from('fees').select('*').eq('academy_id', instituteId).eq('fee_month', month),
       ]);
 
       setExpenses(expRes.data || []);
       setStaffList(staffRes.data || []);
-      setFeesList(feeRes.data || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -48,23 +45,41 @@ export default function ExpensesClient({ instituteId, instituteName }) {
 
   useEffect(() => {
     loadFinancialData();
-  }, [month, instituteId]);
+  }, [instituteId]);
 
-  // Calculations
-  const totalRevenue = feesList
-    .filter(f => f.status === 'paid')
-    .reduce((sum, f) => sum + Number(f.amount || 0), 0);
-
-  const totalStaffSalaries = staffList
-    .reduce((sum, s) => sum + Number(s.salary || 0), 0);
+  // Calculations for selected month
+  const totalStaffSalaries = staffList.reduce((sum, s) => sum + Number(s.salary || 0), 0);
 
   const filteredExpenses = expenses.filter(e => e.expense_date?.startsWith(month));
+  const totalCustomExpenses = filteredExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const totalExpensesRecorded = totalStaffSalaries + totalCustomExpenses;
 
-  const totalCustomExpenses = filteredExpenses
+  // Category breakdowns
+  const rentUtilitiesTotal = filteredExpenses
+    .filter(e => e.category === 'Rent & Utilities')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
-  const totalOutflows = totalStaffSalaries + totalCustomExpenses;
-  const netProfit = totalRevenue - totalOutflows;
+  const suppliesTotal = filteredExpenses
+    .filter(e => e.category === 'Supplies & Stationery')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const maintenanceTotal = filteredExpenses
+    .filter(e => e.category === 'Maintenance' || e.category === 'Maintenance & Repairs')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const miscTotal = filteredExpenses
+    .filter(e => e.category === 'Miscellaneous' || e.category === 'Miscellaneous / Tea')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const maintenanceMiscTotal = maintenanceTotal + miscTotal;
+
+  // Bar Graph categories dataset
+  const categoriesBreakdown = [
+    { name: 'Staff Salaries', amount: totalStaffSalaries, color: 'bg-[#004b30]' },
+    { name: 'Rent & Utilities', amount: rentUtilitiesTotal, color: 'bg-sky-500' },
+    { name: 'Supplies & Stationery', amount: suppliesTotal, color: 'bg-amber-500' },
+    { name: 'Maintenance & Misc', amount: maintenanceMiscTotal, color: 'bg-rose-500' },
+  ];
 
   async function handleAddExpense(e) {
     e.preventDefault();
@@ -94,132 +109,26 @@ export default function ExpensesClient({ instituteId, instituteName }) {
     router.refresh();
   }
 
-  async function handleDeleteExpense(id) {
-    if (!confirm('Are you sure you want to delete this expense record?')) return;
-    await supabase.from('expenses').delete().eq('id', id);
-    loadFinancialData();
-  }
-
-  // Print Monthly Profit & Loss Report
-  function handlePrintReport() {
-    // 1. Build staff rows cleanly outside the template string
-    const staffRowsHtml = staffList.length === 0 
-      ? '<tr><td colspan="3">No staff recorded</td></tr>' 
-      : staffList.map(s => `<tr><td>${s.full_name}</td><td>${s.role ? s.role : 'Teacher'}</td><td>PKR ${Number(s.salary ? s.salary : 0).toLocaleString()}</td></tr>`).join('');
-
-    // 2. Build expense rows cleanly outside the template string
-    const expenseRowsHtml = filteredExpenses.length === 0 
-      ? '<tr><td colspan="4">No custom expenses recorded</td></tr>' 
-      : filteredExpenses.map(e => `<tr><td>${e.title}</td><td>${e.category}</td><td>${e.expense_date}</td><td>PKR ${Number(e.amount).toLocaleString()}</td></tr>`).join('');
-
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Financial P&L Report - ${instituteName} (${month})</title>
-          <style>
-            body { font-family: Arial, sans-serif; color: #1e293b; padding: 40px; background: #fff; }
-            .report { border: 2px solid #004b30; border-radius: 16px; padding: 35px; max-width: 750px; margin: auto; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 25px; }
-            .header h1 { color: #004b30; margin: 0; font-size: 22px; }
-            .badge { background: #e6f4ea; color: #004b30; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-            .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
-            .card { background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; }
-            .card p { margin: 0; font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; }
-            .card h3 { margin: 5px 0 0; font-size: 20px; color: #0f172a; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 12px; }
-            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
-            th { background: #f1f5f9; color: #475569; }
-            .profit-box { text-align: center; background: ${netProfit >= 0 ? '#d1fae5' : '#fee2e2'}; color: ${netProfit >= 0 ? '#065f46' : '#b91c1c'}; border: 1px solid ${netProfit >= 0 ? '#10b981' : '#ef4444'}; padding: 15px; border-radius: 12px; margin-top: 25px; }
-            .profit-box h2 { margin: 5px 0 0; font-size: 28px; }
-          </style>
-        </head>
-        <body>
-          <div class="report">
-            <div class="header">
-              <div>
-                <h1>${instituteName}</h1>
-                <p>Monthly Profit & Loss Statement</p>
-              </div>
-              <div class="badge">Period: ${month}</div>
-            </div>
-
-            <div class="summary-grid">
-              <div class="card">
-                <p>Total Revenue Collected</p>
-                <h3 style="color: #006c4d;">PKR ${totalRevenue.toLocaleString()}</h3>
-              </div>
-              <div class="card">
-                <p>Total Outflows (Salaries + Expenses)</p>
-                <h3 style="color: #dc2626;">PKR ${totalOutflows.toLocaleString()}</h3>
-              </div>
-            </div>
-
-            <h3 style="font-size: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 20px;">Staff Salaries Payout</h3>
-            <table>
-              <thead>
-                <tr><th>Staff Member</th><th>Role</th><th>Monthly Salary</th></tr>
-              </thead>
-              <tbody>
-                ${staffRowsHtml}
-              </tbody>
-            </table>
-
-            <h3 style="font-size: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 25px;">Custom Expenses & Utilities</h3>
-            <table>
-              <thead>
-                <tr><th>Title</th><th>Category</th><th>Date</th><th>Amount</th></tr>
-              </thead>
-              <tbody>
-                ${expenseRowsHtml}
-              </tbody>
-            </table>
-
-            <div class="profit-box">
-              <p style="margin:0; font-size:11px; font-weight:bold; text-transform:uppercase;">Net Profit / Earnings</p>
-              <h2>PKR ${netProfit.toLocaleString()}</h2>
-            </div>
-          </div>
-          <script>window.onload = function() { window.print(); };</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  }
-
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-6 bg-background min-h-screen text-slate-900">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-6 bg-background min-h-screen text-slate-900">
       
-      {/* Header */}
+      {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Expenses & Net Profit</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Expenses & Cost Management</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Track overhead costs, staff salaries, and net earnings &middot; <span className="text-[#006c4d] font-semibold">{instituteName}</span>
+            Record overhead costs, view total expense meters, and analyze spending patterns &middot; <span className="text-[#004b30] font-semibold">{instituteName}</span>
           </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handlePrintReport}
-            className="px-4 py-2.5 bg-[#004b30] hover:bg-[#003823] text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-            Print P&L Report
-          </button>
-
-          <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200 shadow-2xs">
-            <label className="text-xs font-bold text-slate-600 uppercase">Month:</label>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="text-xs font-semibold outline-none bg-transparent text-slate-800 cursor-pointer"
-            />
-          </div>
+        
+        <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
+          <label className="text-xs font-bold text-slate-600 uppercase">MONTH:</label>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="text-xs font-semibold outline-none bg-transparent text-slate-800 cursor-pointer"
+          />
         </div>
       </div>
 
@@ -229,55 +138,78 @@ export default function ExpensesClient({ instituteId, instituteName }) {
         </div>
       )}
 
-      {/* Financial Summary Bento Grid (Square grid on mobile: grid-cols-2, 4 columns on desktop) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm">
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Collected Revenue</p>
-          <p className="text-xl sm:text-2xl font-bold text-[#006c4d] mt-1">PKR {totalRevenue.toLocaleString()}</p>
+      {/* METERS: 5-COLUMN GRID */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 shadow-xs flex flex-col justify-between">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TOTAL EXPENSES</p>
+          <div className="mt-2">
+            <h3 className="text-lg sm:text-xl font-black text-rose-600">PKR {totalExpensesRecorded.toLocaleString()}</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">For {month}</p>
+          </div>
         </div>
-        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm">
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Staff Salaries Payout</p>
-          <p className="text-xl sm:text-2xl font-bold text-amber-600 mt-1">PKR {totalStaffSalaries.toLocaleString()}</p>
+
+        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 shadow-xs flex flex-col justify-between">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">STAFF SALARIES</p>
+          <div className="mt-2">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900">PKR {totalStaffSalaries.toLocaleString()}</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">Fixed payroll</p>
+          </div>
         </div>
-        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm">
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Other Expenses</p>
-          <p className="text-xl sm:text-2xl font-bold text-rose-600 mt-1">PKR {totalCustomExpenses.toLocaleString()}</p>
+
+        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 shadow-xs flex flex-col justify-between">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">UTILITIES & RENT</p>
+          <div className="mt-2">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900">PKR {rentUtilitiesTotal.toLocaleString()}</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">Overhead bills</p>
+          </div>
         </div>
-        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-sm border-l-4 border-l-[#006c4d]">
-          <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase">Net Profit ({month})</p>
-          <p className={`text-xl sm:text-2xl font-bold mt-1 ${netProfit >= 0 ? 'text-[#006c4d]' : 'text-rose-600'}`}>
-            PKR {netProfit.toLocaleString()}
-          </p>
+
+        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 shadow-xs flex flex-col justify-between">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SUPPLIES & STATIONERY</p>
+          <div className="mt-2">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900">PKR {suppliesTotal.toLocaleString()}</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">Classroom supplies</p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/90 rounded-2xl sm:rounded-3xl p-4 shadow-xs flex flex-col justify-between col-span-2 lg:col-span-1">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MAINTENANCE & MISC</p>
+          <div className="mt-2">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900">PKR {maintenanceMiscTotal.toLocaleString()}</h3>
+            <p className="text-[10px] text-slate-400 mt-0.5">Repairs & tea</p>
+          </div>
         </div>
       </div>
 
-      {/* Add Expense Form & Ledger Grid */}
-      <div className="grid lg:grid-cols-3 gap-6">
+      {/* MAIN GRID: ADD EXPENSE FORM & BAR GRAPH ANALYSIS */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Form Card */}
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm h-fit space-y-4">
-          <h3 className="text-lg font-bold text-slate-900">Add Custom Expense</h3>
-          <p className="text-xs text-slate-500">Record rent, electricity bills, tea, markers, or repair costs.</p>
+        <div className="bg-white border border-slate-200/90 rounded-3xl p-6 shadow-xs space-y-4 h-fit">
+          <div>
+            <h3 className="font-bold text-slate-900 text-base">Add New Expense</h3>
+            <p className="text-xs text-slate-400">Record rent, bills, or supplies</p>
+          </div>
 
           <form onSubmit={handleAddExpense} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Expense Title</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Expense Title</label>
               <input
                 type="text"
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Monthly Electricity Bill"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#006c4d]/20"
+                className="w-full text-xs p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-[#004b30] text-slate-900"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#006c4d]/20"
+                className="w-full text-xs p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-[#004b30] text-slate-900"
               >
                 <option value="Rent & Utilities">Rent & Utilities</option>
                 <option value="Supplies & Stationery">Supplies & Stationery</option>
@@ -287,14 +219,14 @@ export default function ExpensesClient({ instituteId, instituteName }) {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Amount (PKR)</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Amount (PKR)</label>
               <input
                 type="number"
                 required
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="5000"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#006c4d]/20"
+                className="w-full text-xs p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-[#004b30] text-slate-900"
               />
             </div>
 
@@ -303,48 +235,46 @@ export default function ExpensesClient({ instituteId, instituteName }) {
               disabled={submitting}
               className="w-full py-3 bg-[#004b30] hover:bg-[#003823] text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
             >
-              {submitting ? 'Saving...' : 'Add Expense'}
+              {submitting ? 'Saving...' : 'Save Expense Entry'}
             </button>
           </form>
         </div>
 
-        {/* Expense List Table */}
-        <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-3xl p-6 shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-slate-900">Recorded Expenses ({month})</h3>
+        {/* Expense Breakdown Bar Graph Analysis */}
+        <div className="lg:col-span-2 bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xs space-y-6 flex flex-col justify-between">
+          <div>
+            <h3 className="font-bold text-slate-900 text-base">Expense Breakdown Analysis</h3>
+            <p className="text-xs text-slate-400">Comparative visual bar breakdown of institute expenditures</p>
+          </div>
 
-          {loading ? (
-            <p className="text-xs text-slate-400 py-10 text-center">Loading expenses...</p>
-          ) : filteredExpenses.length === 0 ? (
-            <p className="text-xs text-slate-400 py-12 text-center">No custom expenses recorded for this month.</p>
-          ) : (
-            <div className="divide-y divide-slate-100 max-h-[450px] overflow-y-auto pr-1">
-              {filteredExpenses.map((exp) => (
-                <div key={exp.id} className="flex items-center justify-between py-3.5 gap-4">
-                  <div>
-                    <p className="text-sm font-bold text-slate-900">{exp.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {exp.category} &middot; Date: {exp.expense_date}
-                    </p>
+          <div className="space-y-4 my-2">
+            {categoriesBreakdown.map((cat, idx) => {
+              const percentage = totalExpensesRecorded > 0 ? Math.round((cat.amount / totalExpensesRecorded) * 100) : 0;
+              return (
+                <div key={idx} className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-slate-700">{cat.name}</span>
+                    <span className="text-slate-900">PKR {cat.amount.toLocaleString()} <span className="text-slate-400 font-normal">({percentage}%)</span></span>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-bold text-rose-600">- PKR {Number(exp.amount).toLocaleString()}</span>
-                    <button
-                      onClick={() => handleDeleteExpense(exp.id)}
-                      className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Delete Expense"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                  <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className={`h-full ${cat.color} rounded-full transition-all duration-500`}
+                      style={{ width: `${Math.max(percentage, cat.amount > 0 ? 3 : 0)}%` }}
+                    ></div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 font-medium gap-2">
+            <span>Tip: Staff salaries account for the majority of fixed expenses.</span>
+            <span className="font-bold text-slate-900">Total Outflow: PKR {totalExpensesRecorded.toLocaleString()}</span>
+          </div>
         </div>
 
       </div>
+
     </div>
   );
 }
