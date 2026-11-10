@@ -158,32 +158,36 @@ function StatCard({ icon: Icon, iconBg, iconColor, label, value, trend }) {
   );
 }
 
-function Trend({ pct }) {
-  if (pct === null || pct === undefined) return null;
-  const up = pct >= 0;
-  return (
-    <span
-      className={`inline-flex items-center gap-0.5 text-xs font-medium px-2 py-1 rounded-full ${
-        up ? 'bg-teal-50 text-teal-700' : 'bg-rose-50 text-rose-600'
-      }`}
-    >
-      {up ? <IconArrowUp width={12} height={12} /> : <IconArrowDown width={12} height={12} />}
-      {Math.abs(pct)}%
-    </span>
-  );
-}
-
 export default function DashboardClient({ displayName, role, stats, recentAdmissions, exportData }) {
   const router = useRouter();
-
   const needsAttention = stats.overdueCount > 0;
 
-  // New Admission Modal & Staff / Classes State
+  // Institute profile details for branding & PDF headers
+  const [institute, setInstitute] = useState({
+    name: displayName,
+    phone: '',
+    email: '',
+    address: '',
+    tagline: '',
+    logo_url: '',
+    stamp_url: ''
+  });
+
+  // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [classesList, setClassesList] = useState([]);
   const [staffCount, setStaffCount] = useState(stats.totalStaff || 0);
+
+  // Export Modal State
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportConfig, setExportConfig] = useState({
+    reportType: 'students',
+    dateRange: 'all',
+    format: 'csv'
+  });
+  const [exporting, setExporting] = useState(false);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -195,7 +199,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
     feeStatus: 'Paid',
   });
 
-  // Fetch classes and staff count when component mounts
+  // Fetch full institute profile, classes, and staff count on mount
   useEffect(() => {
     async function fetchData() {
       const supabase = createClient();
@@ -204,11 +208,13 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
 
       const { data: inst } = await supabase
         .from('institutes')
-        .select('id')
+        .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (inst) {
+        setInstitute(inst);
+
         // Fetch classes list
         const { data: cls } = await supabase
           .from('classes')
@@ -217,7 +223,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           .order('name', { ascending: true });
         if (cls) setClassesList(cls);
 
-        // Fetch staff count if not provided directly in props
+        // Fetch staff count
         const { count: staffC } = await supabase
           .from('staff')
           .select('id', { count: 'exact', head: true })
@@ -231,11 +237,6 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
     fetchData();
   }, []);
 
-  function handleNewAdmission() {
-    setModalOpen(true);
-  }
-
-  // Handle direct dashboard admission submission
   async function handleDashboardAdmissionSubmit(e) {
     e.preventDefault();
     if (!formData.fullName.trim()) {
@@ -265,7 +266,6 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
       return;
     }
 
-    // Automatically calculate sequential roll number
     const { count: studentCount } = await supabase
       .from('students')
       .select('id', { count: 'exact', head: true })
@@ -313,18 +313,108 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
     }, 1200);
   }
 
-  function handleExport() {
-    const csv = toCSV(exportData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const today = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `acadpk-report-${today}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  // Comprehensive Export Function (Supports CSV and Print/PDF with Logo & Stamp)
+  function handleExecuteExport() {
+    setExporting(true);
+
+    if (exportConfig.format === 'csv') {
+      const csv = toCSV(exportData);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const today = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `acadpk-report-${today}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } else {
+      // Print / PDF format with Institute Logo, Stamp, and Metadata
+      const printWindow = window.open('', '_blank');
+      const tableRows = exportData.map(s => `
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;">${s.name}</td>
+          <td style="padding:8px;border:1px solid #ddd;">${s.class_or_subject || 'General'}</td>
+          <td style="padding:8px;border:1px solid #ddd;">${s.parent_name || 'N/A'} (${s.parent_phone || 'No Phone'})</td>
+          <td style="padding:8px;border:1px solid #ddd;">Rs. ${s.monthly_fee || 0}</td>
+          <td style="padding:8px;border:1px solid #ddd; color: ${s.this_month_status === 'paid' ? '#006c4d' : '#e11d48'}; font-weight:bold;">
+            ${s.this_month_status === 'paid' ? 'Paid' : 'Pending'}
+          </td>
+        </tr>
+      `).join('');
+
+      const contactInfo = [
+        institute.phone ? `Phone: ${institute.phone}` : '',
+        institute.email ? `Email: ${institute.email}` : '',
+        institute.address ? `Address: ${institute.address}` : ''
+      ].filter(Boolean).join(' | ');
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>${institute.name} - Report</title>
+            <style>
+              body { font-family: sans-serif; padding: 25px; color: #333; }
+              .pdf-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #004b30; padding-bottom: 12px; margin-bottom: 20px; }
+              .logo-title { display: flex; align-items: center; gap: 15px; }
+              .pdf-logo { max-height: 50px; max-width: 50px; object-fit: contain; border-radius: 6px; }
+              h2 { margin: 0; color: #004b30; font-size: 22px; }
+              .tagline { font-style: italic; font-size: 11px; color: #555; margin: 2px 0; }
+              .meta { font-size: 11px; color: #666; margin-top: 3px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+              th { background: #004b30; color: white; padding: 10px; text-align: left; }
+              .pdf-footer { margin-top: 40px; display: flex; justify-content: flex-end; align-items: center; }
+              .stamp-img { max-height: 70px; object-fit: contain; }
+            </style>
+          </head>
+          <body>
+            <div class="pdf-header">
+              <div class="logo-title">
+                ${institute.logo_url ? `<img src="${institute.logo_url}" class="pdf-logo" />` : ''}
+                <div>
+                  <h2>${institute.name}</h2>
+                  ${institute.tagline ? `<div class="tagline">${institute.tagline}</div>` : ''}
+                  ${contactInfo ? `<div class="meta">${contactInfo}</div>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right; font-size: 11px; color: #666;">
+                <strong>Report:</strong> Students & Fees<br/>
+                <strong>Date:</strong> ${new Date().toLocaleDateString()}
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Student Name</th>
+                  <th>Class / Subject</th>
+                  <th>Parent & Contact</th>
+                  <th>Monthly Fee</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+
+            ${institute.stamp_url ? `
+              <div class="pdf-footer">
+                <div style="text-align: center;">
+                  <img src="${institute.stamp_url}" class="stamp-img" />
+                  <div style="font-size: 10px; color: #666; margin-top: 2px; border-top: 1px solid #ccc; pt: 2px;">Authorized Stamp</div>
+                </div>
+              </div>
+            ` : ''}
+
+            <script>window.print();</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+
+    setExporting(false);
+    setExportModalOpen(false);
   }
 
   const donutCircumference = 2 * Math.PI * 42;
@@ -335,16 +425,10 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
 
   return (
     <div className="space-y-6">
-      {/* Hero banner */}
+      {/* Hero banner with Minimal Logo Badge */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-50 via-white to-teal-50 border border-gray-100 p-6 md:p-8">
-        <div
-          className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-100/60 blur-2xl"
-          aria-hidden="true"
-        />
-        <div
-          className="absolute right-10 bottom-0 w-40 h-40 rounded-full bg-teal-100/50 blur-2xl"
-          aria-hidden="true"
-        />
+        <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-brand-100/60 blur-2xl" aria-hidden="true" />
+        <div className="absolute right-10 bottom-0 w-40 h-40 rounded-full bg-teal-100/50 blur-2xl" aria-hidden="true" />
 
         <div className="relative">
           <span
@@ -356,9 +440,17 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
             System Status: {needsAttention ? 'Needs Attention' : 'Optimal'}
           </span>
 
-          <h1 className="font-display text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-            Welcome back, <span className="text-brand-600">{displayName}</span>
+          <h1 className="font-display text-2xl md:text-3xl font-bold text-gray-900 mb-1 flex items-center gap-3 flex-wrap">
+            {institute.logo_url && (
+              <img 
+                src={institute.logo_url} 
+                alt="Logo" 
+                className="w-10 h-10 sm:w-12 sm:h-12 object-contain rounded-xl bg-white border border-gray-200 shadow-2xs shrink-0 p-0.5" 
+              />
+            )}
+            <span>Welcome back, <span className="text-brand-600">{displayName}</span></span>
           </h1>
+
           <p className="text-sm text-gray-500 mb-6 max-w-md">
             {needsAttention
               ? `You have ${stats.overdueCount} unpaid fee${stats.overdueCount > 1 ? 's' : ''} from previous months. Here's today's overview.`
@@ -367,14 +459,14 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
 
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={handleNewAdmission}
+              onClick={() => setModalOpen(true)}
               className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer shadow-xs"
             >
               <IconPlus width={16} height={16} />
               New Admission
             </button>
             <button
-              onClick={handleExport}
+              onClick={() => setExportModalOpen(true)}
               className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 active:scale-95 text-gray-700 font-medium px-4 py-2.5 rounded-xl text-sm transition-all cursor-pointer shadow-xs"
             >
               <IconDownload width={16} height={16} />
@@ -384,7 +476,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
         </div>
       </div>
 
-      {/* Stat cards: Square Grid on Mobile (2 cols), Row/Standard on Desktop (lg:grid-cols-5) */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           icon={IconStudents}
@@ -423,7 +515,6 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           iconColor="text-teal-700"
           label="Revenue (Month)"
           value={`Rs. ${stats.revenueThisMonth.toLocaleString()}`}
-          trend={<Trend pct={stats.revenueChangePct} />}
         />
 
         <StatCard
@@ -439,10 +530,8 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
         />
       </div>
 
-      {/* SEAMLESSLY ADDED: Minimal Owner Overview & Trend Graph Widget */}
+      {/* Owner Overview & Trend Graph Widget */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        
-        {/* Minimal Owner Snapshot Card */}
         <div className="bg-[#004b30] text-white rounded-2xl shadow-sm p-6 flex flex-col justify-between space-y-4">
           <div>
             <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-300 bg-emerald-900/60 px-3 py-1 rounded-md">
@@ -460,7 +549,6 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           </div>
         </div>
 
-        {/* Minimal Growth Trend Bar Widget */}
         <div className="lg:col-span-2 bg-white border border-gray-100 rounded-2xl shadow-sm p-6 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -472,7 +560,6 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
             </span>
           </div>
 
-          {/* Minimal Vertical Bars */}
           <div className="grid grid-cols-4 gap-3 items-end h-28 pt-4 pb-1 border-b border-gray-100">
             {['Jun', 'Jul', 'Aug', 'Sep'].map((m, idx) => {
               const heights = ['40%', '65%', '55%', '85%'];
@@ -493,7 +580,6 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
             <span className="font-semibold text-gray-700">Stable growth</span>
           </div>
         </div>
-
       </div>
 
       {/* Collection rate + recent admissions */}
@@ -545,7 +631,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
           {recentAdmissions.length === 0 ? (
             <p className="text-sm text-gray-400">
               No students yet.{' '}
-              <button onClick={handleNewAdmission} className="text-brand-600 font-medium cursor-pointer">
+              <button onClick={() => setModalOpen(true)} className="text-brand-600 font-medium cursor-pointer">
                 Add your first one
               </button>
               .
@@ -586,7 +672,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
         </div>
       </div>
 
-      {/* NEW ADMISSION MODAL WITH DYNAMIC CLASS DROPDOWN */}
+      {/* NEW ADMISSION MODAL */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg p-6 sm:p-8 relative">
@@ -621,7 +707,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                     placeholder="e.g. Muhammad Ali"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                   />
                 </div>
 
@@ -630,7 +716,7 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
                   <select
                     value={formData.className}
                     onChange={(e) => setFormData({ ...formData, className: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all bg-white cursor-pointer"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
                   >
                     <option value="General">General / Unassigned</option>
                     {classesList.map((c) => (
@@ -717,6 +803,74 @@ export default function DashboardClient({ displayName, role, stats, recentAdmiss
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* EXPORT MODAL */}
+      {exportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md p-6 relative">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-5">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Export Report</h3>
+                <p className="text-xs text-slate-400">Choose download format (CSV or Print/PDF)</p>
+              </div>
+              <button
+                onClick={() => setExportModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Output Format</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setExportConfig({ ...exportConfig, format: 'csv' })}
+                    className={`py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      exportConfig.format === 'csv'
+                        ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    CSV Spreadsheet (.csv)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportConfig({ ...exportConfig, format: 'print' })}
+                    className={`py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      exportConfig.format === 'print'
+                        ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Print / PDF Document
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setExportModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl text-slate-600 font-semibold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteExport}
+                  disabled={exporting}
+                  className="px-6 py-2.5 rounded-xl bg-[#004b30] text-white font-semibold text-xs hover:bg-[#003823] active:scale-[0.98] transition-all shadow-sm cursor-pointer"
+                >
+                  {exporting ? 'Generating...' : 'Download Report'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

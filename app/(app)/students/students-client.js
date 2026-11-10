@@ -9,9 +9,13 @@ const PAGE_SIZE = 10;
 
 const emptyForm = {
   full_name: '',
-  parent_name: '',
+  date_of_birth: '',
+  guardian_name: '',
+  guardian_occupation: '',
   parent_phone: '',
   address: '',
+  admission_year: '',
+  admission_class: '',
   class_name: '',
   fee_amount: '',
   fee_status: 'Paid',
@@ -170,6 +174,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [staffList, setStaffList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -186,6 +191,12 @@ export default function StudentsClient({ instituteId, instituteName }) {
   const [transferSourceClass, setTransferSourceClass] = useState('');
   const [targetClassName, setTargetClassName] = useState('');
   const [transferring, setTransferring] = useState(false);
+
+  // Export Modal State
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportClassTarget, setExportClassTarget] = useState('all');
+  const [exportFormat, setExportFormat] = useState('csv');
+  const [exporting, setExporting] = useState(false);
 
   const [search, setSearch] = useState('');
   const [selectedClass, setSelectedClass] = useState(null);
@@ -220,6 +231,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
       { data: studentData, error: studentErr },
       { data: classData, error: classErr },
       { data: feesData, error: feesErr },
+      { data: staffData, error: staffErr },
     ] = await Promise.all([
       supabase
         .from('students')
@@ -236,6 +248,11 @@ export default function StudentsClient({ instituteId, instituteName }) {
         .select('student_id, status')
         .eq('fee_month', currentMonth)
         .eq('academy_id', instituteId),
+      supabase
+        .from('staff')
+        .select('id, full_name, role')
+        .eq('institute_id', instituteId)
+        .order('full_name', { ascending: true }),
     ]);
 
     setLoading(false);
@@ -245,7 +262,10 @@ export default function StudentsClient({ instituteId, instituteName }) {
       return;
     }
 
-    // Map fee ledger status onto student records for real-time synchronization
+    if (!staffErr && staffData) {
+      setStaffList(staffData);
+    }
+
     const feeMap = {};
     if (!feesErr && feesData) {
       feesData.forEach((f) => {
@@ -299,9 +319,13 @@ export default function StudentsClient({ instituteId, instituteName }) {
   function openEdit(student) {
     setForm({
       full_name: student.full_name || '',
-      parent_name: student.parent_name || '',
+      date_of_birth: student.date_of_birth || '',
+      guardian_name: student.guardian_name || student.parent_name || '',
+      guardian_occupation: student.guardian_occupation || '',
       parent_phone: student.parent_phone || '',
-      address: student.address || '',
+      address: student.address || student.residential_address || '',
+      admission_year: student.admission_year || '',
+      admission_class: student.admission_class || '',
       class_name: student.class_name || 'General',
       fee_amount: student.fee_amount ?? '',
       fee_status: student.fee_status || 'Paid',
@@ -321,6 +345,16 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    
+    if (!form.full_name || !form.full_name.trim()) {
+      alert('Please enter a valid student full name.');
+      return;
+    }
+    if (!form.guardian_name || !form.guardian_name.trim()) {
+      alert("Please enter Father's / Guardian's full name.");
+      return;
+    }
+
     setError('');
     setSaving(true);
 
@@ -336,9 +370,14 @@ export default function StudentsClient({ instituteId, instituteName }) {
       user_id: user?.id,
       institute_id: instituteId,
       full_name: form.full_name.trim(),
-      parent_name: form.parent_name.trim() || null,
+      date_of_birth: form.date_of_birth || null,
+      guardian_name: form.guardian_name.trim(),
+      guardian_occupation: form.guardian_occupation.trim() || null,
       parent_phone: form.parent_phone.trim() || null,
+      residential_address: form.address.trim() || null,
       address: form.address.trim() || null,
+      admission_year: form.admission_year.trim() || null,
+      admission_class: form.admission_class.trim() || null,
       class_name: form.class_name.trim() || 'General',
       fee_amount: form.fee_amount === '' ? 0 : Number(form.fee_amount),
       fee_status: form.fee_status || 'Paid',
@@ -348,6 +387,17 @@ export default function StudentsClient({ instituteId, instituteName }) {
     let result;
     if (drawerMode === 'edit' && drawerStudent) {
       result = await supabase.from('students').update(payload).eq('id', drawerStudent.id);
+
+      if (!result.error) {
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+        await supabase
+          .from('fees')
+          .update({ amount: payload.fee_amount })
+          .eq('student_id', drawerStudent.id)
+          .eq('fee_month', currentMonth);
+      }
     } else {
       result = await supabase.from('students').insert([payload]);
     }
@@ -473,6 +523,116 @@ export default function StudentsClient({ instituteId, instituteName }) {
     loadData();
   }
 
+  async function handleExportClassReport() {
+    setExporting(true);
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    let query = supabase
+      .from('students')
+      .select('*')
+      .eq('institute_id', instituteId);
+
+    if (exportClassTarget !== 'all') {
+      query = query.eq('class_name', exportClassTarget);
+    }
+
+    const { data: reportStudents, error: repErr } = await query.order('full_name', { ascending: true });
+
+    if (repErr || !reportStudents || reportStudents.length === 0) {
+      alert('No student records found for the selected class/filter.');
+      setExporting(false);
+      return;
+    }
+
+    const { data: feesData } = await supabase
+      .from('fees')
+      .select('student_id, status, amount')
+      .eq('fee_month', currentMonth)
+      .eq('academy_id', instituteId);
+
+    const feeMap = {};
+    if (feesData) {
+      feesData.forEach(f => {
+        feeMap[f.student_id] = { status: f.status, amount: f.amount };
+      });
+    }
+
+    const formattedData = reportStudents.map(s => {
+      const liveFee = feeMap[s.id];
+      const status = liveFee ? (liveFee.status === 'paid' ? 'Paid' : 'Pending') : (s.fee_status || 'Paid');
+      const amount = liveFee?.amount ?? s.fee_amount ?? 5000;
+      return {
+        ...s,
+        resolved_status: status,
+        resolved_fee: amount
+      };
+    });
+
+    if (exportFormat === 'print') {
+      const printWindow = window.open('', '_blank');
+      const rowsHtml = formattedData.map(s => `
+        <tr>
+          <td style="padding:8px; border:1px solid #ddd;">${s.roll_number || 'N/A'}</td>
+          <td style="padding:8px; border:1px solid #ddd;"><strong>${s.full_name}</strong></td>
+          <td style="padding:8px; border:1px solid #ddd;">${s.class_name || 'General'}</td>
+          <td style="padding:8px; border:1px solid #ddd;">${s.guardian_name || 'N/A'} (${s.parent_phone || 'No Phone'})</td>
+          <td style="padding:8px; border:1px solid #ddd;">Rs. ${s.resolved_fee}</td>
+          <td style="padding:8px; border:1px solid #ddd; color: ${s.resolved_status === 'Paid' ? '#006c4d' : '#e11d48'}; font-weight:bold;">${s.resolved_status}</td>
+        </tr>
+      `).join('');
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>${instituteName} - Class Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 25px; color: #1e293b; }
+              h2 { color: #004b30; margin-bottom: 5px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+              th { background: #004b30; color: white; padding: 10px; text-align: left; }
+            </style>
+          </head>
+          <body>
+            <h2>${instituteName}</h2>
+            <p style="font-size: 12px; color: #64748b;">Class Filter: ${exportClassTarget === 'all' ? 'All Classes / Complete Roster' : exportClassTarget} | Date: ${new Date().toLocaleDateString()}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Roll #</th>
+                  <th>Student Name</th>
+                  <th>Class / Batch</th>
+                  <th>Guardian & Contact</th>
+                  <th>Monthly Fee</th>
+                  <th>Fee Status</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+            <script>window.print();</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } else {
+      const headers = ['Roll #,Full Name,Class Name,Guardian Name,Contact Phone,Residential Address,Monthly Fee,Fee Status\n'];
+      const rows = formattedData.map(s => 
+        `"${s.roll_number || 'N/A'}","${s.full_name}","${s.class_name || 'General'}","${s.guardian_name || 'N/A'}","${s.parent_phone || 'N/A'}","${s.address || s.residential_address || 'N/A'}","${s.resolved_fee}","${s.resolved_status}"`
+      );
+
+      const blob = new Blob([headers.concat(rows.join('\n')).join('')], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${instituteName.replace(/\s+/g, '_')}_${exportClassTarget === 'all' ? 'all_students' : exportClassTarget}_report.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
+
+    setExporting(false);
+    setExportModalOpen(false);
+  }
+
   /* ---- Derived Metrics ---- */
 
   const totalStudents = students.length;
@@ -535,6 +695,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
       list = list.filter(
         (s) =>
           s.full_name?.toLowerCase().includes(q) ||
+          s.guardian_name?.toLowerCase().includes(q) ||
           s.parent_name?.toLowerCase().includes(q) ||
           s.parent_phone?.toLowerCase().includes(q) ||
           s.class_name?.toLowerCase().includes(q) ||
@@ -556,7 +717,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-6 bg-background min-h-screen text-on-surface">
-      {/* Page Header with Both Add Buttons */}
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Students</h1>
@@ -565,6 +726,12 @@ export default function StudentsClient({ instituteId, instituteName }) {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setExportModalOpen(true)}
+            className="inline-flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:border-[#006c4d] text-slate-700 hover:text-[#006c4d] font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-2xs"
+          >
+            Export
+          </button>
           <button
             onClick={openAddClassModal}
             className="inline-flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:border-[#006c4d] text-slate-700 hover:text-[#006c4d] font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-all cursor-pointer shadow-2xs"
@@ -588,7 +755,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
         </div>
       )}
 
-      {/* Bento Stat Cards - 2 Column Square Grid on Mobile */}
+      {/* Bento Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <button
           onClick={() => {
@@ -678,21 +845,19 @@ export default function StudentsClient({ instituteId, instituteName }) {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search students by name, roll #, phone, or class..."
+          placeholder="Search students by name, guardian, roll #, phone, or class..."
           className="w-full border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm bg-white outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
         />
       </div>
 
-      {/* Grid View: Classes Overview - 1 Class Card per Row on Mobile */}
+      {/* Grid View: Classes Overview */}
       {mode === 'grid' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
           {classGroups.map((g) => {
             const c = g.classRow;
             const isFull = c?.capacity && g.students.length >= c.capacity;
-
-            // Check fee status for badge display
-            const allPaid = g.students.length > 0 && g.students.every((s) => s.fee_status === 'Paid');
-            const hasPending = g.students.some((s) => s.fee_status !== 'Paid');
+            const pendingCount = g.students.filter((s) => s.fee_status !== 'Paid').length;
+            const allPaid = g.students.length > 0 && pendingCount === 0;
 
             return (
               <div
@@ -700,7 +865,6 @@ export default function StudentsClient({ instituteId, instituteName }) {
                 className="bg-white border border-slate-200/80 rounded-3xl p-4 sm:p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between relative overflow-hidden"
               >
                 <div>
-                  {/* Header: Class Name, Shift & Fee Status Badge */}
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <h3 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight">{g.label}</h3>
@@ -713,14 +877,13 @@ export default function StudentsClient({ instituteId, instituteName }) {
                     </div>
 
                     <div className="flex items-center gap-1 sm:gap-2">
-                      {/* Fee Status Badge from Fee Section */}
                       {allPaid ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-semibold bg-emerald-50 text-[#006c4d] border border-emerald-200/80">
                           Paid ✓
                         </span>
-                      ) : hasPending ? (
+                      ) : pendingCount > 0 ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-200/80">
-                          Pending
+                          {pendingCount} Pending
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full text-[9px] sm:text-[11px] font-semibold bg-slate-50 text-slate-600 border border-slate-200">
@@ -728,7 +891,6 @@ export default function StudentsClient({ instituteId, instituteName }) {
                         </span>
                       )}
 
-                      {/* Options Menu */}
                       {c && (
                         <div className="relative">
                           <button
@@ -771,7 +933,6 @@ export default function StudentsClient({ instituteId, instituteName }) {
                     </div>
                   </div>
 
-                  {/* Original Student Details List with Icons */}
                   <div className="space-y-2.5 sm:space-y-3.5 my-3 sm:my-4 pt-2 border-t border-slate-100 text-[11px] sm:text-xs">
                     <div className="flex items-center gap-2.5 sm:gap-3">
                       <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
@@ -808,7 +969,6 @@ export default function StudentsClient({ instituteId, instituteName }) {
                   </div>
                 </div>
 
-                {/* Hybrid Dual CTA Buttons */}
                 <div className="grid grid-cols-2 gap-2 sm:gap-3 pt-2">
                   {c ? (
                     <button
@@ -897,7 +1057,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
 
                   <div className="flex items-center gap-4">
                     <span className="text-xs text-slate-500 font-medium hidden sm:block">
-                      Rs. {s.fee_amount || 0}
+                      Rs. {s.fee_amount ?? 0}
                     </span>
                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${STATUS_STYLES[s.fee_status || 'Paid']}`}>
                       {s.fee_status || 'Paid'}
@@ -973,6 +1133,95 @@ export default function StudentsClient({ instituteId, instituteName }) {
         </div>
       )}
 
+      {/* Class Export Modal */}
+      {exportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md p-6 sm:p-8 relative">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-5">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Export Class Report</h3>
+                <p className="text-xs text-slate-400">Select a specific class and download details</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExportModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <IconX width={20} height={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Select Class / Batch *
+                </label>
+                <select
+                  value={exportClassTarget}
+                  onChange={(e) => setExportClassTarget(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
+                >
+                  <option value="all">All Classes (Complete Institute Roster)</option>
+                  <option value="General">General / Unassigned</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name} {c.section ? `(${c.section})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Output Format</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('csv')}
+                    className={`py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      exportFormat === 'csv'
+                        ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    CSV Spreadsheet (.csv)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('print')}
+                    className={`py-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                      exportFormat === 'print'
+                        ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]'
+                        : 'border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Print / PDF Document
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setExportModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl text-slate-600 font-semibold text-xs hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportClassReport}
+                  disabled={exporting}
+                  className="px-6 py-2.5 rounded-xl bg-[#004b30] text-white font-semibold text-xs hover:bg-[#003823] active:scale-[0.98] transition-all shadow-sm cursor-pointer"
+                >
+                  {exporting ? 'Generating...' : 'Download Report'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Student Drawer Popup */}
       <AnimatePresence>
         {drawerOpen && (
@@ -989,11 +1238,11 @@ export default function StudentsClient({ instituteId, instituteName }) {
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'tween', duration: 0.25 }}
-              className="fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 overflow-y-auto p-6"
+              className="fixed top-0 right-0 h-full w-full max-w-lg bg-white shadow-2xl z-50 overflow-y-auto p-6"
             >
               <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
                 <h3 className="font-bold text-lg text-slate-900">
-                  {drawerMode === 'add' ? 'Add Student' : drawerMode === 'edit' ? 'Edit Details' : 'Student Profile'}
+                  {drawerMode === 'add' ? 'Add Student Admission' : drawerMode === 'edit' ? 'Edit Student Details' : 'Student Profile'}
                 </h3>
                 <button onClick={closeDrawer} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                   <IconX width={20} height={20} />
@@ -1010,38 +1259,52 @@ export default function StudentsClient({ instituteId, instituteName }) {
                     <p className="text-sm font-medium text-slate-500 mt-1">Roll #: {drawerStudent.roll_number || 'N/A'}</p>
                   </div>
 
-                  <div className="bg-slate-50 p-5 rounded-2xl space-y-3.5 text-sm border border-slate-100">
+                  <div className="bg-slate-50 p-5 rounded-2xl space-y-3.5 text-xs sm:text-sm border border-slate-100">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500 font-medium">Class:</span>
+                      <span className="text-slate-500 font-medium">Current Class:</span>
                       <span className="font-bold text-slate-900">{drawerStudent.class_name || 'General'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500 font-medium">Parent Name:</span>
-                      <span className="font-bold text-slate-900">{drawerStudent.parent_name || '—'}</span>
+                      <span className="text-slate-500 font-medium">Date of Birth:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.date_of_birth || '—'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500 font-medium">Parent Phone:</span>
+                      <span className="text-slate-500 font-medium">Guardian Name:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.guardian_name || drawerStudent.parent_name || '—'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Guardian Occupation:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.guardian_occupation || '—'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Contact Phone:</span>
                       <span className="font-bold text-slate-900">{drawerStudent.parent_phone || '—'}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-500 font-medium">Address:</span>
-                      <span className="font-bold text-slate-900 text-right max-w-[200px] truncate">{drawerStudent.address || '—'}</span>
+                      <span className="text-slate-500 font-medium">Residential Address:</span>
+                      <span className="font-bold text-slate-900 text-right max-w-[200px] truncate">{drawerStudent.address || drawerStudent.residential_address || '—'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Admission Year:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.admission_year || '—'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500 font-medium">Class at Admission:</span>
+                      <span className="font-bold text-slate-900">{drawerStudent.admission_class || '—'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-500 font-medium">Monthly Fee:</span>
-                      <span className="font-bold text-[#006c4d] text-base">Rs. {drawerStudent.fee_amount || 0}</span>
+                      <span className="font-bold text-[#006c4d] text-base">Rs. {drawerStudent.fee_amount ?? 0}</span>
                     </div>
 
                     <div className="flex justify-between items-center pt-2.5 border-t border-slate-200/60">
                       <span className="text-slate-500 font-medium">Fee Status:</span>
-                      {/* STATIC READ-ONLY BADGE */}
                       <span className={`px-3 py-1 rounded-full text-xs font-bold ${STATUS_STYLES[drawerStudent.fee_status || 'Paid']}`}>
                         {drawerStudent.fee_status || 'Paid'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Actions Row */}
                   <div className="flex gap-3 pt-2">
                     <button
                       onClick={() => openEdit(drawerStudent)}
@@ -1060,73 +1323,124 @@ export default function StudentsClient({ instituteId, instituteName }) {
               )}
 
               {(drawerMode === 'add' || drawerMode === 'edit') && (
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-4 pb-8">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Student Full Name *</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">1. Student's Full Name *</label>
                     <input
                       type="text"
                       required
                       value={form.full_name}
                       onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                      placeholder="e.g. Muhammad Ali"
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                     />
                   </div>
 
-                  {/* Dynamic Class Selection Dropdown */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Class / Batch</label>
-                    <select
-                      value={form.class_name}
-                      onChange={(e) => setForm({ ...form, class_name: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
-                    >
-                      <option value="General">General / Unassigned</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name} {c.section ? `(${c.section})` : ''} {c.shift ? `• ${c.shift}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Parent Name</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">2. Date of Birth</label>
+                      <input
+                        type="date"
+                        value={form.date_of_birth}
+                        onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">6. Year of Admission</label>
                       <input
                         type="text"
-                        value={form.parent_name}
-                        onChange={(e) => setForm({ ...form, parent_name: e.target.value })}
+                        value={form.admission_year}
+                        onChange={(e) => setForm({ ...form, admission_year: e.target.value })}
+                        placeholder="e.g. 2026"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">3. Father's / Guardian Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={form.guardian_name}
+                        onChange={(e) => setForm({ ...form, guardian_name: e.target.value })}
+                        placeholder="e.g. Tariq Mahmood"
                         className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Phone</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">4. Guardian Occupation</label>
                       <input
                         type="text"
+                        value={form.guardian_occupation}
+                        onChange={(e) => setForm({ ...form, guardian_occupation: e.target.value })}
+                        placeholder="e.g. Engineer"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Parent Contact Phone</label>
+                      <input
+                        type="tel"
                         value={form.parent_phone}
                         onChange={(e) => setForm({ ...form, parent_phone: e.target.value })}
+                        placeholder="e.g. 0300-1234567"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">5. Residential Address</label>
+                      <input
+                        type="text"
+                        value={form.address}
+                        onChange={(e) => setForm({ ...form, address: e.target.value })}
+                        placeholder="e.g. House 12, Street 4, Islamabad"
                         className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                       />
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Residential Address</label>
-                    <input
-                      type="text"
-                      value={form.address}
-                      onChange={(e) => setForm({ ...form, address: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">7. Class at Admission</label>
+                      <input
+                        type="text"
+                        value={form.admission_class}
+                        onChange={(e) => setForm({ ...form, admission_class: e.target.value })}
+                        placeholder="e.g. 9th Grade"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">8. Current Class *</label>
+                      <select
+                        value={form.class_name}
+                        onChange={(e) => setForm({ ...form, class_name: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
+                      >
+                        <option value="General">General / Unassigned</option>
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name} {c.section ? `(${c.section})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Fee Amount (Rs.)</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Monthly Fee Amount (Rs.)</label>
                       <input
                         type="number"
                         value={form.fee_amount}
                         onChange={(e) => setForm({ ...form, fee_amount: e.target.value })}
+                        placeholder="e.g. 5000"
                         className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                       />
                     </div>
@@ -1143,7 +1457,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
                     </div>
                   </div>
 
-                  <div className="pt-4 flex gap-3">
+                  <div className="pt-4 flex gap-3 sticky bottom-0 bg-white py-2 border-t border-slate-100">
                     <button
                       type="submit"
                       disabled={saving}
@@ -1166,7 +1480,7 @@ export default function StudentsClient({ instituteId, instituteName }) {
         )}
       </AnimatePresence>
 
-      {/* Flexible Add/Edit Class Modal */}
+      {/* Class Modal */}
       {classModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto">
@@ -1240,13 +1554,18 @@ export default function StudentsClient({ instituteId, instituteName }) {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Class Teacher / Instructor <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Sir Ahmed or Ma'am Aisha"
+                <select
                   value={classForm.teacher_name}
                   onChange={(e) => setClassForm({ ...classForm, teacher_name: e.target.value })}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
-                />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all bg-white cursor-pointer"
+                >
+                  <option value="">Select Staff Member...</option>
+                  {staffList.map((st) => (
+                    <option key={st.id} value={st.full_name}>
+                      {st.full_name} {st.role ? `(${st.role})` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

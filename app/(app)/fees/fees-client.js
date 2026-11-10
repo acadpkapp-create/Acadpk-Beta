@@ -60,7 +60,6 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     setError('');
 
     try {
-      // STRICT INSTITUTE_ID & ACADEMY_ID FILTERING FOR MULTI-TENANT ISOLATION
       const [classRes, studentRes, feeRes] = await Promise.all([
         supabase.from('classes').select('*').eq('institute_id', activeId).order('name', { ascending: true }),
         supabase.from('students').select('*').eq('institute_id', activeId).order('full_name', { ascending: true }),
@@ -131,11 +130,12 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     setActionLoading(true);
     setError('');
 
+    // FIXED: Use '?? 5000' so a fee of 0 is properly registered instead of falling back
     const rows = unbilledStudents.map((s) => ({
       academy_id: activeId,
       student_id: s.id,
       fee_month: month,
-      amount: s.fee_amount || 5000,
+      amount: s.fee_amount ?? 5000,
       status: 'due',
     }));
 
@@ -186,7 +186,7 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
           academy_id: activeId,
           student_id: st.id,
           fee_month: month,
-          amount: st.fee_amount || 5000,
+          amount: st.fee_amount ?? 5000,
           status: 'paid',
           paid_at: new Date().toISOString(),
         });
@@ -200,7 +200,7 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
 
   function handlePrintVoucher(student) {
     const feeRow = fees[student.id];
-    const amount = feeRow ? feeRow.amount : (student.fee_amount || 5000);
+    const amount = feeRow?.amount ?? student.fee_amount ?? 5000;
     const status = feeRow ? feeRow.status : 'not_billed';
     const isPaid = status === 'paid';
 
@@ -257,7 +257,7 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
 
   function handleSendWhatsApp(student) {
     const feeRow = fees[student.id];
-    const amount = feeRow ? feeRow.amount : (student.fee_amount || 5000);
+    const amount = feeRow?.amount ?? student.fee_amount ?? 5000;
     const phone = student.parent_phone || '';
     const message = encodeURIComponent(
       `Dear Parent, fee reminder from ${activeName} for ${student.full_name} for ${month}. Total Payable: PKR ${Number(amount).toLocaleString()}. Please clear dues.`
@@ -269,13 +269,18 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
     }
   }
 
-  const totalCollected = Object.values(fees)
-    .filter((f) => f.status === 'paid')
-    .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+  // FIXED: Use '??' so 0 fee amounts contribute correctly as 0 instead of defaulting to 5000
+  const totalCollected = students.reduce((sum, s) => {
+    const f = fees[s.id];
+    const itemAmount = Number(f?.amount ?? s.fee_amount ?? 5000);
+    return sum + (f && f.status === 'paid' ? itemAmount : 0);
+  }, 0);
 
-  const totalDue = Object.values(fees)
-    .filter((f) => f.status === 'due')
-    .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+  const totalDue = students.reduce((sum, s) => {
+    const f = fees[s.id];
+    const itemAmount = Number(f?.amount ?? s.fee_amount ?? 5000);
+    return sum + (f && f.status === 'due' ? itemAmount : 0);
+  }, 0);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-6 bg-background min-h-screen text-slate-900">
@@ -347,7 +352,8 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
                   const unpaidCount = group.students.filter((s) => fees[s.id] && fees[s.id].status === 'due').length;
                   const groupCollected = group.students.reduce((sum, s) => {
                     const f = fees[s.id];
-                    return sum + (f && f.status === 'paid' ? Number(f.amount || 0) : 0);
+                    const itemAmount = Number(f?.amount ?? s.fee_amount ?? 5000);
+                    return sum + (f && f.status === 'paid' ? itemAmount : 0);
                   }, 0);
 
                   return (
@@ -463,7 +469,7 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
                         <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3">
                           <div className="text-right mr-2 hidden md:block">
                             <p className="text-xs font-bold text-slate-700">
-                              PKR {Number(feeRow?.amount || student.fee_amount || 5000).toLocaleString()}
+                              PKR {Number(feeRow?.amount ?? student.fee_amount ?? 5000).toLocaleString()}
                             </p>
                             <p className="text-[10px] text-slate-400">Monthly Due</p>
                           </div>
@@ -505,7 +511,7 @@ export default function FeesClient({ academyId, academyName, instituteId, instit
                                     academy_id: activeId,
                                     student_id: student.id,
                                     fee_month: month,
-                                    amount: student.fee_amount || 5000,
+                                    amount: student.fee_amount ?? 5000,
                                     status: 'due',
                                   });
                                   loadData();

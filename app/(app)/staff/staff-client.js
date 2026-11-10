@@ -70,6 +70,9 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
 
+  // Share Attendance State
+  const [copiedLink, setCopiedLink] = useState(false);
+
   // Active Dropdown state for 3 dots
   const [activeMenuId, setActiveMenuId] = useState(null);
 
@@ -95,14 +98,18 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
   const [isEditing, setIsEditing] = useState(false);
   const [selectedClasses, setSelectedClasses] = useState([]);
 
+  // Export Staff Modal State
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState('csv');
+
   // Fetch available classes on mount
   useEffect(() => {
     async function fetchClasses() {
-      const { data: classesData } = await supabase.from('classes').select('id, name, section').order('name', { ascending: true });
+      const { data: classesData } = await supabase.from('classes').select('id, name, section').eq('institute_id', activeId).order('name', { ascending: true });
       if (classesData) setClassesList(classesData);
     }
-    fetchClasses();
-  }, []);
+    if (activeId) fetchClasses();
+  }, [activeId]);
 
   // Filter staff by search and role
   const filteredStaff = useMemo(() => {
@@ -121,6 +128,21 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
   const totalPayroll = staffList.reduce((sum, s) => sum + (Number(s.salary) || 0), 0);
   const activeCount = staffList.filter((s) => s.status === 'Active').length;
 
+  // Share Attendance Link Helpers
+  const attendanceUrl = typeof window !== 'undefined' 
+    ? `${window.location.origin}/mark-attendance` 
+    : '/mark-attendance';
+
+  const whatsappMessage = encodeURIComponent(
+    `Hello Teacher! Please mark today's class attendance for *${activeName}* using this portal link:\n${attendanceUrl}`
+  );
+
+  function handleCopyAttendanceLink() {
+    navigator.clipboard.writeText(attendanceUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  }
+
   async function handleAddStaff(e) {
     e.preventDefault();
     if (!formData.fullName.trim()) {
@@ -137,16 +159,25 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
       return;
     }
 
-    const { data: inst } = await supabase
-      .from('institutes')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    // GLOBAL PIN UNIQUENESS CHECK ACROSS ALL INSTITUTES TO PREVENT BREACHES/COLLISIONS
+    if (formData.pinCode && formData.pinCode.trim()) {
+      const { data: existingPin } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('pin_code', formData.pinCode.trim())
+        .maybeSingle();
+
+      if (existingPin) {
+        alert('Security Alert: This 4-digit PIN is already assigned to another staff member in the system. Please use a unique PIN.');
+        setSubmitting(false);
+        return;
+      }
+    }
 
     const payload = {
       user_id: user.id,
-      academy_id: inst ? inst.id : null,
-      institute_id: inst ? inst.id : null,
+      academy_id: activeId,
+      institute_id: activeId,
       full_name: formData.fullName.trim(),
       role: formData.role,
       phone: formData.phone.trim() || null,
@@ -212,12 +243,28 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
     }
   }
 
-  // Save Edit & Multi-Class & PIN Assignments
+  // Save Edit & Multi-Class & PIN Assignments with Global Uniqueness Check
   async function handleSaveEdits(e) {
     e.preventDefault();
     if (!selectedStaff) return;
 
     setSubmitting(true);
+
+    // GLOBAL PIN UNIQUENESS CHECK ACROSS ALL INSTITUTES
+    if (selectedStaff.pin_code && selectedStaff.pin_code.trim()) {
+      const { data: existingPin } = await supabase
+        .from('staff')
+        .select('id')
+        .eq('pin_code', selectedStaff.pin_code.trim())
+        .maybeSingle();
+
+      if (existingPin && existingPin.id !== selectedStaff.id) {
+        alert('Security Alert: This 4-digit PIN is already in use by another staff member. Please choose a unique PIN.');
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const classesString = selectedClasses.join(', ');
 
     const updates = {
@@ -248,10 +295,21 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
   async function handleDeleteStaff(id) {
     if (!confirm('Are you sure you want to remove this staff member?')) return;
 
+    const staffToDelete = staffList.find((s) => s.id === id);
+
     const { error } = await supabase.from('staff').delete().eq('id', id);
     if (error) {
       alert(`Error deleting: ${error.message}`);
       return;
+    }
+
+    // AUTOMATICALLY CLEAR TEACHER FROM CLASSES TABLE TO PREVENT ORPHANED REFERENCES
+    if (staffToDelete?.full_name) {
+      await supabase
+        .from('classes')
+        .update({ teacher_name: null })
+        .eq('teacher_name', staffToDelete.full_name)
+        .eq('institute_id', activeId);
     }
 
     setStaffList(staffList.filter((s) => s.id !== id));
@@ -259,10 +317,79 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
     router.refresh();
   }
 
+  function handleExportStaff() {
+    if (staffList.length === 0) {
+      alert('No staff records available to export.');
+      return;
+    }
+
+    if (exportFormat === 'print') {
+      const printWindow = window.open('', '_blank');
+      const tableRows = staffList.map((s) => `
+        <tr>
+          <td style="padding:8px;border:1px solid #ddd;"><strong>${s.full_name}</strong></td>
+          <td style="padding:8px;border:1px solid #ddd;">${s.role}</td>
+          <td style="padding:8px;border:1px solid #ddd;">${s.phone || 'N/A'}</td>
+          <td style="padding:8px;border:1px solid #ddd;">${s.qualification || 'N/A'}</td>
+          <td style="padding:8px;border:1px solid #ddd;">PKR ${Number(s.salary || 0).toLocaleString()}</td>
+          <td style="padding:8px;border:1px solid #ddd; color: ${s.salary_status === 'Paid' ? '#006c4d' : '#e11d48'}; font-weight:bold;">${s.salary_status || 'Unpaid'}</td>
+        </tr>
+      `).join('');
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>${activeName} - Staff Directory Report</title>
+            <style>
+              body { font-family: sans-serif; padding: 25px; color: #333; }
+              h2 { margin-bottom: 4px; color: #004b30; }
+              table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+              th { background: #004b30; color: white; padding: 10px; text-align: left; }
+            </style>
+          </head>
+          <body>
+            <h2>${activeName}</h2>
+            <p style="font-size: 12px; color: #666;">Staff Directory & Payroll Report | Generated: ${new Date().toLocaleDateString()}</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Staff Name</th>
+                  <th>Role</th>
+                  <th>Phone</th>
+                  <th>Qualification</th>
+                  <th>Monthly Salary</th>
+                  <th>Salary Status</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+            <script>window.print();</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } else {
+      const headers = ['Name,Role,Phone,Email,Qualification,Salary,Salary Status,Status\n'];
+      const rows = staffList.map((s) => 
+        `"${s.full_name}","${s.role}","${s.phone || 'N/A'}","${s.email || 'N/A'}","${s.qualification || 'N/A'}","${s.salary || 0}","${s.salary_status || 'Unpaid'}","${s.status}"`
+      );
+
+      const blob = new Blob([headers.concat(rows.join('\n')).join('')], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activeName.replace(/\s+/g, '_')}_Staff_Report.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
+
+    setExportModalOpen(false);
+  }
+
   return (
     <div className="p-3 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-5 bg-background min-h-screen text-slate-900">
       
-      {/* Header section */}
+      {/* Header section with Add and Export buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900">Staff Management</h1>
@@ -271,13 +398,21 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
           </p>
         </div>
 
-        <button
-          onClick={() => setModalOpen(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-[#004b30] hover:bg-[#003823] active:scale-95 text-white rounded-2xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer w-full sm:w-auto"
-        >
-          <IconPlus width={18} height={18} />
-          <span>Add Staff Member</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setExportModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-white border border-slate-200 hover:border-[#006c4d] text-slate-700 hover:text-[#006c4d] rounded-2xl text-xs sm:text-sm font-bold transition-all shadow-2xs cursor-pointer"
+          >
+            Export Report
+          </button>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-[#004b30] hover:bg-[#003823] active:scale-95 text-white rounded-2xl text-xs sm:text-sm font-bold transition-all shadow-sm cursor-pointer"
+          >
+            <IconPlus width={18} height={18} />
+            <span>Add Staff Member</span>
+          </button>
+        </div>
       </div>
 
       {/* Overview Stat Cards */}
@@ -296,6 +431,51 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
         </div>
       </div>
 
+      {/* SHAREABLE TEACHER ATTENDANCE PORTAL LINK CARD */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-2xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <span className="text-[10px] uppercase font-bold tracking-wider text-[#004b30] bg-emerald-100 px-2.5 py-0.5 rounded-md">
+              FACULTY PORTAL ACCESS
+            </span>
+            <h3 className="font-extrabold text-slate-900 text-sm sm:text-base mt-1.5">Teacher Attendance Link</h3>
+            <p className="text-xs text-slate-500">Share this direct link with faculty members so they can log and mark daily batch attendance.</p>
+          </div>
+
+          <span className="bg-emerald-50 text-[#006c4d] text-[11px] font-extrabold px-3 py-1 rounded-full border border-emerald-200 w-fit">
+            Ready to Share
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <input
+            type="text"
+            readOnly
+            value={attendanceUrl}
+            className="w-full text-xs p-3.5 rounded-xl bg-slate-50 border border-slate-200 outline-none text-slate-700 font-mono shadow-inner"
+          />
+
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <button
+              onClick={handleCopyAttendanceLink}
+              className="flex-1 sm:flex-none px-4 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shadow-xs flex items-center justify-center gap-1.5"
+            >
+              {copiedLink ? '✓ Copied Link' : 'Copy Link'}
+            </button>
+
+            <a
+              href={`https://wa.me/?text=${whatsappMessage}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 sm:flex-none px-4 py-3 bg-[#25D366] hover:bg-[#1ebd59] text-white rounded-xl text-xs font-bold transition-all shadow-xs text-center whitespace-nowrap flex items-center justify-center gap-1.5"
+            >
+              <IconWhatsApp width={15} height={15} />
+              Share WhatsApp
+            </a>
+          </div>
+        </div>
+      </div>
+
       {/* Search & Filter Toolbar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
         <div className="relative flex-1">
@@ -310,7 +490,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {['all', 'teacher', 'administrator', 'accountant'].map((role) => (
+          {['all', 'principal', 'vice principal', 'teacher', 'administrator', 'accountant'].map((role) => (
             <button
               key={role}
               onClick={() => setRoleFilter(role)}
@@ -521,6 +701,8 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                       onChange={(e) => setSelectedStaff({ ...selectedStaff, role: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
                     >
+                      <option value="Principal">Principal</option>
+                      <option value="Vice Principal">Vice Principal</option>
                       <option value="Teacher">Teacher</option>
                       <option value="Administrator">Administrator</option>
                       <option value="Accountant">Accountant</option>
@@ -550,7 +732,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                     placeholder="e.g. 4821"
                     className="w-full px-4 py-2 rounded-xl border border-emerald-300 text-xs sm:text-sm outline-none focus:border-[#006c4d] bg-white font-mono font-bold tracking-widest text-[#004b30]"
                   />
-                  <p className="text-[10px] text-slate-500">Used for quick mobile portal access (e.g. attendance, fee logs).</p>
+                  <p className="text-[10px] text-slate-500">Globally secure PIN for quick mobile portal login.</p>
                 </div>
 
                 {/* MULTI-CLASS ASSIGNMENT CHECKBOXES */}
@@ -729,6 +911,8 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
                   >
+                    <option value="Principal">Principal</option>
+                    <option value="Vice Principal">Vice Principal</option>
                     <option value="Teacher">Teacher</option>
                     <option value="Administrator">Administrator</option>
                     <option value="Accountant">Accountant</option>
@@ -747,7 +931,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                 </div>
               </div>
 
-              {/* UNIVERSAL PIN CODE INPUT FOR ALL STAFF */}
+              {/* UNIVERSAL PIN CODE INPUT WITH GLOBAL UNIQUENESS */}
               <div className="p-3.5 bg-emerald-50/50 border border-emerald-200 rounded-2xl space-y-1.5">
                 <label className="block text-xs font-bold text-[#004b30]">Staff 4-Digit Access PIN Code (Optional)</label>
                 <input
@@ -758,7 +942,7 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                   placeholder="e.g. 4821"
                   className="w-full px-4 py-2.5 rounded-xl border border-emerald-300 text-xs sm:text-sm outline-none focus:border-[#006c4d] bg-white font-mono font-bold tracking-widest text-[#004b30]"
                 />
-                <p className="text-[10px] text-slate-500">Used for quick mobile portal access (e.g. attendance, fee logs).</p>
+                <p className="text-[10px] text-slate-500">Globally secure PIN for quick mobile portal login.</p>
               </div>
 
               {/* MULTI-CLASS ASSIGNMENT CHECKBOXES FOR ADD MODAL */}
@@ -848,6 +1032,61 @@ export default function StaffClient({ academyId, academyName, instituteId, insti
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* EXPORT STAFF REPORT MODAL */}
+      {exportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-sm p-6 relative">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <h3 className="text-base font-bold text-slate-900">Export Staff Report</h3>
+              <button onClick={() => setExportModalOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Select Format</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('csv')}
+                    className={`py-2 rounded-xl border text-xs font-semibold transition-all ${
+                      exportFormat === 'csv' ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    CSV Spreadsheet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('print')}
+                    className={`py-2 rounded-xl border text-xs font-semibold transition-all ${
+                      exportFormat === 'print' ? 'border-[#006c4d] bg-emerald-50 text-[#006c4d]' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    Print / PDF Roster
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setExportModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportStaff}
+                  className="px-5 py-2 text-xs font-semibold bg-[#004b30] text-white rounded-xl hover:bg-[#003823]"
+                >
+                  Download Report
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

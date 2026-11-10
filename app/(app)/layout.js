@@ -58,6 +58,7 @@ export default async function AppLayout({ children }) {
       userName={displayName}
       userEmail={user.email}
       alerts={{ overdueFeesCount, onLeaveCount }}
+      userRole="owner" // Always owner for authenticated admin sessions
     >
       {children}
     </AppShell>

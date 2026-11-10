@@ -24,6 +24,12 @@ export default function ExpensesClient({ instituteId, instituteName }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Edit Expense State
+  const [editingExpense, setEditingExpense] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+
   async function loadFinancialData() {
     if (!instituteId) return;
     setLoading(true);
@@ -109,6 +115,119 @@ export default function ExpensesClient({ instituteId, instituteName }) {
     router.refresh();
   }
 
+  async function handleDeleteExpense(id) {
+    if (!confirm('Are you sure you want to delete this expense entry?')) return;
+
+    const { error: delErr } = await supabase.from('expenses').delete().eq('id', id);
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    loadFinancialData();
+    router.refresh();
+  }
+
+  function startEditing(exp) {
+    setEditingExpense(exp);
+    setEditTitle(exp.title);
+    setEditCategory(exp.category);
+    setEditAmount(exp.amount);
+  }
+
+  async function handleUpdateExpense(e) {
+    e.preventDefault();
+    if (!editingExpense) return;
+
+    const { error: upErr } = await supabase
+      .from('expenses')
+      .update({
+        title: editTitle,
+        category: editCategory,
+        amount: Number(editAmount),
+      })
+      .eq('id', editingExpense.id);
+
+    if (upErr) {
+      setError(upErr.message);
+      return;
+    }
+
+    setEditingExpense(null);
+    loadFinancialData();
+    router.refresh();
+  }
+
+  // Export Expense Report Function
+  function handleExportReport() {
+    const staffRowsHtml = staffList.length === 0
+      ? '<tr><td colspan="2">No staff recorded</td></tr>'
+      : staffList.map(st => `<tr><td>${st.full_name} (${st.role || 'Teacher'})</td><td>PKR ${Number(st.salary || 0).toLocaleString()}</td></tr>`).join('');
+
+    const customRowsHtml = filteredExpenses.length === 0
+      ? '<tr><td colspan="3">No custom expenses recorded for this month</td></tr>'
+      : filteredExpenses.map(ex => `<tr><td>${ex.title}</td><td>${ex.category}</td><td>PKR ${Number(ex.amount || 0).toLocaleString()}</td></tr>`).join('');
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Expense & Cost Report - ${instituteName} (${month})</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #1e293b; padding: 40px; background: #fff; }
+            .report { border: 2px solid #004b30; border-radius: 16px; padding: 35px; max-width: 750px; margin: auto; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 25px; }
+            .header h1 { color: #004b30; margin: 0; font-size: 22px; }
+            .badge { background: #fee2e2; color: #dc2626; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+            .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
+            .card { background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; }
+            .card p { margin: 0; font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase; }
+            .card h3 { margin: 5px 0 0; font-size: 20px; color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+            th { background: #f1f5f9; color: #475569; }
+          </style>
+        </head>
+        <body>
+          <div class="report">
+            <div class="header">
+              <div>
+                <h1>${instituteName}</h1>
+                <p>Expense & Cost Management Report</p>
+              </div>
+              <div class="badge">Period: ${month}</div>
+            </div>
+
+            <div class="summary-grid">
+              <div class="card">
+                <p>Total Expenses Outflow</p>
+                <h3 style="color: #dc2626;">PKR ${totalExpensesRecorded.toLocaleString()}</h3>
+              </div>
+              <div class="card">
+                <p>Staff Payroll</p>
+                <h3>PKR ${totalStaffSalaries.toLocaleString()}</h3>
+              </div>
+            </div>
+
+            <h3 style="font-size: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 20px;">Staff Salaries Roster</h3>
+            <table>
+              <thead><tr><th>Staff Member & Role</th><th>Monthly Salary</th></tr></thead>
+              <tbody>${staffRowsHtml}</tbody>
+            </table>
+
+            <h3 style="font-size: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 25px;">Recorded Overhead Expenses</h3>
+            <table>
+              <thead><tr><th>Title</th><th>Category</th><th>Amount</th></tr></thead>
+              <tbody>${customRowsHtml}</tbody>
+            </table>
+          </div>
+          <script>window.onload = function() { window.print(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  }
+
   return (
     <div className="p-3 sm:p-6 lg:p-8 max-w-container-max mx-auto w-full space-y-6 bg-background min-h-screen text-slate-900">
       
@@ -121,14 +240,26 @@ export default function ExpensesClient({ instituteId, instituteName }) {
           </p>
         </div>
         
-        <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
-          <label className="text-xs font-bold text-slate-600 uppercase">MONTH:</label>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="text-xs font-semibold outline-none bg-transparent text-slate-800 cursor-pointer"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleExportReport}
+            className="px-4 py-2.5 bg-[#004b30] hover:bg-[#003823] text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Export Expense Report
+          </button>
+
+          <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs">
+            <label className="text-xs font-bold text-slate-600 uppercase">MONTH:</label>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="text-xs font-semibold outline-none bg-transparent text-slate-800 cursor-pointer"
+            />
+          </div>
         </div>
       </div>
 
@@ -274,6 +405,138 @@ export default function ExpensesClient({ instituteId, instituteName }) {
         </div>
 
       </div>
+
+      {/* RECORDED EXPENSES TABLE WITH EDIT & DELETE */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-xs space-y-4">
+        <div>
+          <h3 className="font-bold text-slate-900 text-base">Recorded Expenses ({month})</h3>
+          <p className="text-xs text-slate-400">Manage, edit, or remove expense entries for this period</p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-400 uppercase text-[10px]">
+                <th className="py-3 px-4 font-bold">Title</th>
+                <th className="py-3 px-4 font-bold">Category</th>
+                <th className="py-3 px-4 font-bold">Date</th>
+                <th className="py-3 px-4 font-bold">Amount</th>
+                <th className="py-3 px-4 font-bold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredExpenses.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="py-8 text-center text-slate-400 font-medium">
+                    No custom expenses recorded for {month}.
+                  </td>
+                </tr>
+              ) : (
+                filteredExpenses.map((exp) => (
+                  <tr key={exp.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-slate-900">{exp.title}</td>
+                    <td className="py-3.5 px-4">
+                      <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md font-semibold text-[11px]">
+                        {exp.category}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-500">{exp.expense_date || exp.created_at?.slice(0, 10)}</td>
+                    <td className="py-3.5 px-4 font-extrabold text-rose-600">PKR {Number(exp.amount || 0).toLocaleString()}</td>
+                    <td className="py-3.5 px-4 text-right space-x-2">
+                      <button
+                        onClick={() => startEditing(exp)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition-all cursor-pointer"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteExpense(exp.id)}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-bold transition-all cursor-pointer"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* EDIT EXPENSE MODAL */}
+      {editingExpense && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-xl space-y-5 animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Edit Expense Entry</h3>
+                <p className="text-xs text-slate-400">Update expense details</p>
+              </div>
+              <button 
+                onClick={() => setEditingExpense(null)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateExpense} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Expense Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full text-xs p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-[#004b30] text-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full text-xs p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-[#004b30] text-slate-900"
+                >
+                  <option value="Rent & Utilities">Rent & Utilities</option>
+                  <option value="Supplies & Stationery">Supplies & Stationery</option>
+                  <option value="Maintenance">Maintenance & Repairs</option>
+                  <option value="Miscellaneous">Miscellaneous / Tea</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Amount (PKR)</label>
+                <input
+                  type="number"
+                  required
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  className="w-full text-xs p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-[#004b30] text-slate-900"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingExpense(null)}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-[#004b30] hover:bg-[#003823] text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

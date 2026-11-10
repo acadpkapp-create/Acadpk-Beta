@@ -31,11 +31,38 @@ function IconBuilding(props) {
   );
 }
 
-export default function SettingsClient({ userEmail, role, academyId, academyName: initialAcademyName, instituteType }) {
+export default function SettingsClient({ 
+  userEmail, 
+  role, 
+  academyId, 
+  academyName: initialAcademyName, 
+  instituteType,
+  initialPhone,
+  initialEmail,
+  initialAddress,
+  initialTagline,
+  initialLogoUrl,
+  initialStampUrl
+}) {
   const router = useRouter();
   const supabase = createClient();
 
   const [academyName, setAcademyName] = useState(initialAcademyName);
+  const [phone, setPhone] = useState(initialPhone);
+  const [email, setEmail] = useState(initialEmail);
+  const [address, setAddress] = useState(initialAddress);
+  const [tagline, setTagline] = useState(initialTagline);
+
+  // Image states & live previews
+  const [logoUrl, setLogoUrl] = useState(initialLogoUrl || '');
+  const [logoFile, setLogoFile] = useState(null);
+  const [stampUrl, setStampUrl] = useState(initialStampUrl || '');
+  const [stampFile, setStampFile] = useState(null);
+
+  // Generate live object URL previews when a new file is picked, otherwise show saved URL
+  const logoPreview = logoFile ? URL.createObjectURL(logoFile) : logoUrl;
+  const stampPreview = stampFile ? URL.createObjectURL(stampFile) : stampUrl;
+
   const [savingAcademy, setSavingAcademy] = useState(false);
   const [academySaved, setAcademySaved] = useState(false);
   const [academyError, setAcademyError] = useState('');
@@ -51,25 +78,73 @@ export default function SettingsClient({ userEmail, role, academyId, academyName
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  async function saveAcademyName(e) {
+  async function uploadFileToStorage(file, prefix) {
+    if (!file) return null;
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${academyId}-${prefix}-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('institute-branding')
+      .upload(filePath, file, { upsert: true });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload ${prefix}: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage
+      .from('institute-branding')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  }
+
+  async function saveAcademyProfile(e) {
     e.preventDefault();
     setSavingAcademy(true);
     setAcademyError('');
     setAcademySaved(false);
 
-    // Update the 'institutes' table directly
-    const { error } = await supabase.from('institutes').update({ name: academyName }).eq('id', academyId);
-    setSavingAcademy(false);
+    try {
+      let uploadedLogoUrl = logoUrl;
+      let uploadedStampUrl = stampUrl;
 
-    if (error) {
-      setAcademyError(error.message);
-      return;
+      if (logoFile) {
+        uploadedLogoUrl = await uploadFileToStorage(logoFile, 'logo');
+      }
+
+      if (stampFile) {
+        uploadedStampUrl = await uploadFileToStorage(stampFile, 'stamp');
+      }
+
+      const { error } = await supabase.from('institutes').update({
+        name: academyName.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        address: address.trim(),
+        tagline: tagline.trim(),
+        logo_url: uploadedLogoUrl,
+        stamp_url: uploadedStampUrl,
+        updated_at: new Date().toISOString()
+      }).eq('id', academyId);
+
+      if (error) throw error;
+
+      if (uploadedLogoUrl) setLogoUrl(uploadedLogoUrl);
+      if (uploadedStampUrl) setStampUrl(uploadedStampUrl);
+      setLogoFile(null);
+      setStampFile(null);
+
+      setSavingAcademy(false);
+      setAcademySaved(true);
+      setTimeout(() => {
+        setAcademySaved(false);
+        router.refresh();
+      }, 1500);
+    } catch (err) {
+      setSavingAcademy(false);
+      setAcademyError(err.message || 'Something went wrong saving your profile.');
     }
-    setAcademySaved(true);
-    setTimeout(() => {
-      setAcademySaved(false);
-      router.refresh();
-    }, 1500);
   }
 
   async function changePassword(e) {
@@ -119,7 +194,7 @@ export default function SettingsClient({ userEmail, role, academyId, academyName
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Portal Settings</h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
-          Manage your account credentials, institute details, and data preferences.
+          Manage your account credentials, institute details, official stamp, and data preferences.
         </p>
       </div>
 
@@ -146,26 +221,128 @@ export default function SettingsClient({ userEmail, role, academyId, academyName
         </div>
       </div>
 
-      <form onSubmit={saveAcademyName} className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-4">
+      <form onSubmit={saveAcademyProfile} className="bg-white border border-slate-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-4">
         <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
           <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#006c4d] flex items-center justify-center">
             <IconBuilding width={20} height={20} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Institute Profile</h2>
-            <p className="text-xs text-slate-500">Update your academy or coaching center name</p>
+            <h2 className="text-lg font-bold text-slate-900">Institute Profile & PDF Headers</h2>
+            <p className="text-xs text-slate-500">Update official academy details, upload logo, and stamp with live preview</p>
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Institute Name</label>
-          <input
-            type="text"
-            required
-            value={academyName}
-            onChange={(e) => setAcademyName(e.target.value)}
-            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:border-[#006c4d] bg-white shadow-2xs"
-          />
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Institute / Academy Name *</label>
+            <input
+              type="text"
+              required
+              value={academyName}
+              onChange={(e) => setAcademyName(e.target.value)}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:border-[#006c4d] bg-white shadow-2xs"
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Institute Contact Number</label>
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="e.g. 0300-1234567"
+                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:border-[#006c4d] bg-white shadow-2xs"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Institute Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. info@academy.com"
+                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:border-[#006c4d] bg-white shadow-2xs"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tagline / Slogan</label>
+            <input
+              type="text"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              placeholder="e.g. Excellence in Education"
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:border-[#006c4d] bg-white shadow-2xs"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Campus / Street Address</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. Main Market, Sector G-8, Islamabad"
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:border-[#006c4d] bg-white shadow-2xs"
+            />
+          </div>
+
+          {/* Logo & Stamp Image File Uploads with Live Previews */}
+          <div className="grid sm:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
+            
+            {/* Logo Section */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700 uppercase">Brand Logo Image (PNG / JPG)</label>
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="w-14 h-14 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="Logo preview" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-medium">No Logo</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">
+                    {logoFile ? logoFile.name : (logoUrl ? 'Active Logo Loaded' : 'No file chosen')}
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/jpg"
+                    onChange={(e) => setLogoFile(e.target.files[0])}
+                    className="mt-1.5 w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-[#006c4d] hover:file:bg-emerald-100 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Stamp Section */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-slate-700 uppercase">Official Stamp / Signature (PNG / JPG)</label>
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="w-14 h-14 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                  {stampPreview ? (
+                    <img src={stampPreview} alt="Stamp preview" className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="text-[10px] text-slate-400 font-medium">No Stamp</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 truncate">
+                    {stampFile ? stampFile.name : (stampUrl ? 'Active Stamp Loaded' : 'No file chosen')}
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/png, image/jpeg, image/jpg"
+                    onChange={(e) => setStampFile(e.target.files[0])}
+                    className="mt-1.5 w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-[#006c4d] hover:file:bg-emerald-100 cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
 
         {academyError && <p className="text-xs font-semibold text-rose-600">{academyError}</p>}
@@ -176,7 +353,7 @@ export default function SettingsClient({ userEmail, role, academyId, academyName
             disabled={savingAcademy}
             className="px-6 py-3 bg-[#004b30] hover:bg-[#003823] text-white font-bold text-xs rounded-xl disabled:opacity-50 transition-all shadow-sm cursor-pointer"
           >
-            {savingAcademy ? 'Saving…' : academySaved ? 'Saved Successfully!' : 'Save Institute Name'}
+            {savingAcademy ? 'Uploading & Saving…' : academySaved ? 'Saved Successfully!' : 'Save Institute Profile'}
           </button>
         </div>
       </form>

@@ -13,10 +13,10 @@ export default async function SettingsPage() {
     redirect('/login');
   }
 
-  // Fetch institute info directly from the 'institutes' table to ensure consistency across views
+  // Fetch full institute profile safely
   const { data: instituteRow } = await supabase
     .from('institutes')
-    .select('id, name, type')
+    .select('id, name, type, phone, email, address, tagline, logo_url, stamp_url')
     .eq('user_id', user.id)
     .maybeSingle();
 
@@ -27,6 +27,12 @@ export default async function SettingsPage() {
       academyId={instituteRow?.id || null}
       academyName={instituteRow?.name || 'AcadPK Portal'}
       instituteType={instituteRow?.type || 'School / College'}
+      initialPhone={instituteRow?.phone || ''}
+      initialEmail={instituteRow?.email || user.email || ''}
+      initialAddress={instituteRow?.address || ''}
+      initialTagline={instituteRow?.tagline || ''}
+      initialLogoUrl={instituteRow?.logo_url || ''}
+      initialStampUrl={instituteRow?.stamp_url || ''}
     />
   );
 }

@@ -12,7 +12,17 @@ export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [institute, setInstitute] = useState({ id: null, name: 'Portal', type: 'School / College' });
+  const [institute, setInstitute] = useState({ 
+    id: null, 
+    name: 'Portal', 
+    type: 'School / College',
+    phone: '',
+    email: '',
+    address: '',
+    tagline: '',
+    logo_url: '',
+    stamp_url: ''
+  });
 
   // Dashboard Stats State
   const [stats, setStats] = useState({
@@ -26,16 +36,20 @@ export default function DashboardPage() {
   const [recentAdmissions, setRecentAdmissions] = useState([]);
   const [classesList, setClassesList] = useState([]);
 
-  // New Admission Modal State
+  // New Admission Modal State with All Fields Included
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [formData, setFormData] = useState({
-    fullName: '',
-    className: 'General',
-    parentName: '',
-    parentPhone: '',
-    address: '',
+    fullName: '',          // 1. Students Full Name (Required)
+    dateOfBirth: '',       // 2. Date of Birth (Optional)
+    guardianName: '',      // 3. Fathers/Guardian Full Name (Required)
+    guardianOccupation: '',// 4. Fathers/Guardian Occupation (Optional)
+    parentPhone: '',       // Parent / Guardian Contact Phone
+    residentialAddress: '',// 5. Residential Address (Optional)
+    admissionYear: '',     // 6. Year of Admission (Optional)
+    admissionClass: '',    // 7. Class at admission (Optional)
+    currentClass: 'General',// 8. Current Class (Required)
     feeAmount: '',
     feeStatus: 'Paid',
   });
@@ -45,10 +59,11 @@ export default function DashboardPage() {
   const [exportConfig, setExportConfig] = useState({
     reportType: 'students', 
     dateRange: 'all',        
-    format: 'csv',          
+    format: 'csv',
+    selectedClass: 'all',    
   });
 
-  // Clean Data Loader synchronized with the `fees` table for the current month
+  // Clean Data Loader (Including all Institute Profile & PDF header fields)
   async function loadRealData() {
     setLoading(true);
     const supabase = createClient();
@@ -57,7 +72,7 @@ export default function DashboardPage() {
     if (user) {
       let { data: instData } = await supabase
         .from('institutes')
-        .select('id, name, type')
+        .select('id, name, type, phone, email, address, tagline, logo_url, stamp_url')
         .eq('user_id', user.id)
         .maybeSingle();
 
@@ -95,13 +110,17 @@ export default function DashboardPage() {
 
       studentsData.forEach((st) => {
         const f = feeMap[st.id];
+        const effectiveAmount = Number(f?.amount ?? st.fee_amount ?? 5000);
+
         if (f) {
           if (f.status === 'paid') {
-            monthRevenue += Number(f.amount || 0);
+            monthRevenue += effectiveAmount;
             paidCount++;
           } else if (f.status === 'due') {
-            feeRemaining += Number(f.amount || 0);
+            feeRemaining += effectiveAmount;
           }
+        } else {
+          feeRemaining += Number(st.fee_amount || 5000);
         }
       });
 
@@ -148,8 +167,17 @@ export default function DashboardPage() {
 
   async function handleAddAdmissionSubmit(e) {
     e.preventDefault();
-    if (!formData.fullName.trim()) {
-      alert('Please enter student full name.');
+    
+    if (!formData.fullName || !formData.fullName.trim()) {
+      alert('Please enter a valid student full name.');
+      return;
+    }
+    if (!formData.guardianName || !formData.guardianName.trim()) {
+      alert("Please enter Father's / Guardian's full name.");
+      return;
+    }
+    if (!formData.currentClass || !formData.currentClass.trim()) {
+      alert('Please select or specify the current class.');
       return;
     }
 
@@ -175,13 +203,17 @@ export default function DashboardPage() {
       {
         user_id: user.id,
         institute_id: institute.id,
-        full_name: formData.fullName.trim(),
-        class_name: formData.className.trim() || 'General',
-        parent_name: formData.parentName.trim() || null,
-        parent_phone: formData.parentPhone.trim() || null,
-        address: formData.address.trim() || null,
-        fee_amount: Number(formData.feeAmount) || 5000,
-        fee_status: 'Pending',
+        full_name: formData.fullName.trim(),                  
+        date_of_birth: formData.dateOfBirth || null,         
+        guardian_name: formData.guardianName.trim(),         
+        guardian_occupation: formData.guardianOccupation.trim() || null, 
+        parent_phone: formData.parentPhone.trim() || null,   
+        residential_address: formData.residentialAddress.trim() || null, 
+        admission_year: formData.admissionYear.trim() || null,   
+        admission_class: formData.admissionClass.trim() || null, 
+        class_name: formData.currentClass.trim(),                
+        fee_amount: formData.feeAmount === '' ? 0 : Number(formData.feeAmount),
+        fee_status: formData.feeStatus,
         roll_number: autoRollNumber,
       },
     ]);
@@ -200,10 +232,14 @@ export default function DashboardPage() {
       setModalOpen(false);
       setFormData({
         fullName: '',
-        className: 'General',
-        parentName: '',
+        dateOfBirth: '',
+        guardianName: '',
+        guardianOccupation: '',
         parentPhone: '',
-        address: '',
+        residentialAddress: '',
+        admissionYear: '',
+        admissionClass: '',
+        currentClass: 'General',
         feeAmount: '',
         feeStatus: 'Paid',
       });
@@ -214,10 +250,11 @@ export default function DashboardPage() {
   const handleExecuteExport = async () => {
     setExporting(true);
     const supabase = createClient();
+    const currentMonth = currentMonthStr();
 
     let query = supabase
       .from('students')
-      .select('roll_number, full_name, class_name, parent_name, parent_phone, address, fee_amount, fee_status, created_at')
+      .select('id, roll_number, full_name, class_name, guardian_name, parent_phone, residential_address, fee_amount, created_at')
       .eq('institute_id', institute.id);
 
     const now = new Date();
@@ -233,10 +270,37 @@ export default function DashboardPage() {
       query = query.gte('created_at', startOfYear);
     }
 
-    const { data: reportData, error } = await query.order('created_at', { ascending: false });
+    const { data: studentsData, error } = await query.order('created_at', { ascending: false });
 
-    if (error || !reportData || reportData.length === 0) {
+    if (error || !studentsData || studentsData.length === 0) {
       alert('No matching records found for the selected options.');
+      setExporting(false);
+      return;
+    }
+
+    const { data: feesData } = await supabase
+      .from('fees')
+      .select('student_id, status, amount')
+      .eq('fee_month', currentMonth);
+
+    const feeStatusMap = {};
+    if (feesData) {
+      feesData.forEach(f => {
+        feeStatusMap[f.student_id] = f.status === 'paid' ? 'Paid' : 'Pending';
+      });
+    }
+
+    let reportData = studentsData.map(s => ({
+      ...s,
+      fee_status: feeStatusMap[s.id] || 'Paid'
+    }));
+
+    if (exportConfig.reportType === 'defaulters') {
+      reportData = reportData.filter(s => s.fee_status === 'Pending');
+    }
+
+    if (reportData.length === 0) {
+      alert('No records found matching the selected fee status filter.');
       setExporting(false);
       return;
     }
@@ -248,48 +312,85 @@ export default function DashboardPage() {
           <td style="padding:8px;border:1px solid #ddd;">${s.roll_number || 'N/A'}</td>
           <td style="padding:8px;border:1px solid #ddd;"><strong>${s.full_name}</strong></td>
           <td style="padding:8px;border:1px solid #ddd;">${s.class_name || 'General'}</td>
-          <td style="padding:8px;border:1px solid #ddd;">${s.parent_phone || 'N/A'}</td>
+          <td style="padding:8px;border:1px solid #ddd;">${s.guardian_name || 'N/A'} (${s.parent_phone || 'No Phone'})</td>
           <td style="padding:8px;border:1px solid #ddd;">Rs. ${s.fee_amount || 0}</td>
-          <td style="padding:8px;border:1px solid #ddd;">${s.fee_status}</td>
+          <td style="padding:8px;border:1px solid #ddd; color: ${s.fee_status === 'Paid' ? '#006c4d' : '#e11d48'}; font-weight:bold;">${s.fee_status}</td>
         </tr>
       `).join('');
+
+      // Build contact details dynamically based on what the owner filled out
+      const contactInfo = [
+        institute.phone ? `Phone: ${institute.phone}` : '',
+        institute.email ? `Email: ${institute.email}` : '',
+        institute.address ? `Address: ${institute.address}` : ''
+      ].filter(Boolean).join(' | ');
 
       printWindow.document.write(`
         <html>
           <head>
             <title>${institute.name} - Report</title>
             <style>
-              body { font-family: sans-serif; padding: 20px; color: #333; }
-              h2 { margin-bottom: 4px; color: #004b30; }
+              body { font-family: sans-serif; padding: 25px; color: #333; }
+              .pdf-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #004b30; padding-bottom: 12px; margin-bottom: 20px; }
+              .logo-title { display: flex; align-items: center; gap: 15px; }
+              .pdf-logo { max-height: 55px; max-width: 55px; object-fit: contain; border-radius: 6px; }
+              h2 { margin: 0; color: #004b30; font-size: 22px; }
+              .tagline { font-style: italic; font-size: 11px; color: #555; margin: 2px 0; }
+              .meta { font-size: 11px; color: #666; margin-top: 3px; }
               table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
               th { background: #004b30; color: white; padding: 10px; text-align: left; }
+              .pdf-footer { margin-top: 40px; display: flex; justify-content: flex-end; align-items: center; }
+              .stamp-img { max-height: 70px; object-fit: contain; }
             </style>
           </head>
           <body>
-            <h2>${institute.name}</h2>
-            <p style="font-size: 12px; color: #666;">Report Type: ${exportConfig.reportType.toUpperCase()} | Generated: ${new Date().toLocaleDateString()}</p>
+            <div class="pdf-header">
+              <div class="logo-title">
+                ${institute.logo_url ? `<img src="${institute.logo_url}" class="pdf-logo" />` : ''}
+                <div>
+                  <h2>${institute.name}</h2>
+                  ${institute.tagline ? `<div class="tagline">${institute.tagline}</div>` : ''}
+                  ${contactInfo ? `<div class="meta">${contactInfo}</div>` : ''}
+                </div>
+              </div>
+              <div style="text-align: right; font-size: 11px; color: #666;">
+                <strong>Report:</strong> ${exportConfig.reportType.toUpperCase()}<br/>
+                <strong>Date:</strong> ${new Date().toLocaleDateString()}
+              </div>
+            </div>
+
             <table>
               <thead>
                 <tr>
                   <th>Roll #</th>
                   <th>Student Name</th>
-                  <th>Class / Batch</th>
-                  <th>Contact</th>
+                  <th>Current Class</th>
+                  <th>Guardian & Contact</th>
                   <th>Fee (Rs.)</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>${tableRows}</tbody>
             </table>
+
+            ${institute.stamp_url ? `
+              <div class="pdf-footer">
+                <div style="text-align: center;">
+                  <img src="${institute.stamp_url}" class="stamp-img" />
+                  <div style="font-size: 10px; color: #666; margin-top: 2px; border-top: 1px solid #ccc; pt: 2px;">Authorized Stamp</div>
+                </div>
+              </div>
+            ` : ''}
+
             <script>window.print();</script>
           </body>
         </html>
       `);
       printWindow.document.close();
     } else {
-      const headers = ['Roll #,Full Name,Class / Batch,Parent Name,Phone,Address,Fee Amount,Fee Status,Date\n'];
+      const headers = ['Roll #,Full Name,Current Class,Guardian Name,Contact Phone,Address,Fee Amount,Fee Status,Date\n'];
       const rows = reportData.map(s => 
-        `"${s.roll_number || 'N/A'}","${s.full_name}","${s.class_name || 'General'}","${s.parent_name || 'N/A'}","${s.parent_phone || 'N/A'}","${s.address || 'N/A'}",${s.fee_amount || 0},"${s.fee_status}",${new Date(s.created_at).toLocaleDateString()}`
+        `"${s.roll_number || 'N/A'}","${s.full_name}","${s.class_name || 'General'}","${s.guardian_name || 'N/A'}","${s.parent_phone || 'N/A'}","${s.residential_address || 'N/A'}",${s.fee_amount || 0},"${s.fee_status}",${new Date(s.created_at).toLocaleDateString()}`
       );
 
       const blob = new Blob([headers.concat(rows.join('\n')).join('')], { type: 'text/csv;charset=utf-8;' });
@@ -306,11 +407,7 @@ export default function DashboardPage() {
   };
 
   const isSchool = institute.type === 'School / College';
-  const groupLabel = isSchool
-    ? 'Active Classes'
-    : institute.type === 'Quran Academy / Hifz'
-    ? 'Active Halqas'
-    : 'Active Batches';
+  const groupLabel = isSchool ? 'Active Classes' : 'Active Batches';
   const strokeDashoffset = 283 - 283 * (stats.collectionPercentage / 100);
 
   return (
@@ -324,9 +421,18 @@ export default function DashboardPage() {
             <span>System Status: Optimal</span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2 tracking-tight">
-            Welcome back, <span className="text-[#006c4d]">{institute.name}</span>
+          {/* MINIMAL RESPONSIVE WELCOME HEADER WITH LOGO BADGE */}
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2 tracking-tight flex items-center gap-3 flex-wrap">
+            {institute.logo_url && (
+              <img 
+                src={institute.logo_url} 
+                alt="Logo" 
+                className="w-10 h-10 sm:w-12 sm:h-12 object-contain rounded-xl bg-white border border-slate-200 shadow-2xs shrink-0 p-0.5" 
+              />
+            )}
+            <span>Welcome back, <span className="text-[#006c4d]">{institute.name}</span></span>
           </h1>
+
           <p className="text-xs sm:text-sm text-slate-500 mb-6 max-w-xl leading-relaxed">
             Here's a quick overview of your institute's performance today. Stay on top of enrollments and fee collection.
           </p>
@@ -355,174 +461,87 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Stat cards: 2 columns on mobile, 5 columns on desktop */}
+      {/* Stat cards */}
       <section className="grid grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
-        <div
-          onClick={() => router.push('/students')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
-        >
+        <div onClick={() => router.push('/students')} className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between">
           <div>
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-[#006c4d] group-hover:scale-105 transition-transform">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6 0 3.375 3.375 0 016 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-                </svg>
-              </div>
-              <span className="text-[10px] font-bold text-[#006c4d] bg-emerald-50 uppercase tracking-wider px-2.5 py-1 rounded-full border border-emerald-200">
-                Live
-              </span>
-            </div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Students</p>
           </div>
           <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : stats.totalStudents.toLocaleString()}</p>
         </div>
-
-        <div
-          onClick={() => router.push('/classes')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
-        >
+        <div onClick={() => router.push('/students')} className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between">
           <div>
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-sky-50 flex items-center justify-center text-sky-600 group-hover:scale-105 transition-transform">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
-                </svg>
-              </div>
-            </div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{groupLabel}</p>
           </div>
           <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : stats.activeClasses}</p>
         </div>
-
-        <div
-          onClick={() => router.push('/staff')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
-        >
+        <div onClick={() => router.push('/staff')} className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between">
           <div>
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:scale-105 transition-transform">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-              </div>
-            </div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Total Staff</p>
           </div>
           <p className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2">{loading ? '...' : stats.totalStaff}</p>
         </div>
-
-        <div
-          onClick={() => router.push('/fees?filter=paid')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md hover:border-[#006c4d]/40 transition-all cursor-pointer group flex flex-col justify-between"
-        >
+        <div onClick={() => router.push('/fees?filter=paid')} className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between">
           <div>
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-teal-50 flex items-center justify-center text-teal-700 group-hover:scale-105 transition-transform">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5h16.5a1.5 1.5 0 011.5 1.5v9a1.5 1.5 0 01-1.5 1.5H3.75a1.5 1.5 0 01-1.5-1.5v-9a1.5 1.5 0 011.5-1.5zM3 10.5h18" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Revenue (Month)</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Fee Collected (Month)</p>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-slate-900 truncate mt-2">
-            {loading ? '...' : `Rs. ${stats.monthRevenue.toLocaleString()}`}
-          </p>
+          <p className="text-xl sm:text-2xl font-bold text-slate-900 truncate mt-2">{loading ? '...' : `Rs. ${stats.monthRevenue.toLocaleString()}`}</p>
         </div>
-
-        <div
-          onClick={() => router.push('/fees?filter=due')}
-          className="bg-white rounded-2xl p-5 sm:p-6 border border-rose-200 shadow-xs hover:shadow-md hover:border-rose-400 transition-all cursor-pointer group flex flex-col justify-between col-span-2 lg:col-span-1"
-        >
+        <div onClick={() => router.push('/fees?filter=due')} className="bg-white rounded-2xl p-5 sm:p-6 border border-rose-200 shadow-xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between col-span-2 lg:col-span-1">
           <div>
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 group-hover:scale-105 transition-transform">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                </svg>
-              </div>
-            </div>
             <p className="text-xs font-semibold text-rose-500 uppercase tracking-wider mb-1">Fee Remaining</p>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-rose-600 truncate mt-2">
-            {loading ? '...' : `Rs. ${stats.feeRemaining.toLocaleString()}`}
-          </p>
+          <p className="text-xl sm:text-2xl font-bold text-rose-600 truncate mt-2">{loading ? '...' : `Rs. ${stats.feeRemaining.toLocaleString()}`}</p>
         </div>
       </section>
 
-      {/* MINIMAL OWNER OVERVIEW WITH EXPLANATORY NARRATIVE */}
-      <section>
-        <div className="bg-[#004b30] text-white rounded-2xl sm:rounded-3xl shadow-xs p-6 sm:p-8 flex flex-col justify-between space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-emerald-800/85">
-            <div>
-              <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-300 bg-emerald-900/60 px-3 py-1 rounded-md">
-                Owner Overview
-              </span>
-              <h3 className="text-xl font-bold mt-2">Institute Status & Activity</h3>
-            </div>
-            <button
-              onClick={() => router.push('/analytics')}
-              className="self-start sm:self-auto px-4 py-2 bg-emerald-900/80 hover:bg-emerald-900 text-white font-semibold text-xs rounded-xl transition-all border border-emerald-700/60 shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>Deep Analytics</span>
-              <span>&rarr;</span>
-            </button>
-          </div>
-
-          <div className="space-y-2 text-xs sm:text-sm text-emerald-100 leading-relaxed pt-1">
-            <p>
-              Your academy is currently operating with <strong>{stats.totalStudents} active students</strong> distributed across {stats.activeClasses} active classes, supported by {stats.totalStaff} staff members.
-            </p>
-            <p>
-              {stats.feeRemaining > 0 ? (
-                <>Fee collection efficiency stands at <strong>{stats.collectionPercentage}%</strong> for this month, with <strong>Rs. {stats.feeRemaining.toLocaleString()}</strong> remaining in pending dues that require follow-up.</>
-              ) : (
-                <>Great news! All monthly fee vouchers have been successfully collected with zero pending dues.</>
-              )}
-            </p>
-          </div>
+      {/* OWNER SPOTLIGHT CARD WITH PARAGRAPH STATEMENT */}
+      <section className="bg-[#004b30] text-white rounded-3xl p-6 sm:p-8 shadow-sm space-y-3">
+        <div className="inline-block px-3 py-1 rounded-full bg-[#003823] text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+          Owner Spotlight
         </div>
+        <h3 className="text-xl sm:text-2xl font-bold tracking-tight">
+          {currentMonthStr()} Overview
+        </h3>
+        <p className="text-xs sm:text-sm text-emerald-100 max-w-3xl leading-relaxed">
+          Your institute recorded an active headcount of <strong className="text-white">{stats.totalStudents} students</strong> across <strong className="text-white">{stats.activeClasses} active batches</strong> during this period, supported by <strong className="text-white">{stats.totalStaff} staff members</strong>. Current operations reflect a fee collection efficiency of <strong className="text-emerald-300">{stats.collectionPercentage}%</strong> with <strong className="text-rose-300">PKR {stats.feeRemaining.toLocaleString()}</strong> in pending dues remaining.
+        </p>
       </section>
 
-      {/* Collection rate + recent admissions */}
+      {/* COLLECTION RATE & RECENT ADMISSIONS SECTIONS */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="bg-white rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-center border border-slate-200/80 shadow-xs">
-          <div className="relative z-10 w-full">
-            <h3 className="text-lg font-bold text-slate-900 mb-1">Fee Collection</h3>
-            <p className="text-xs text-slate-400 mb-6">Target collection progress</p>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">Fee Collection</h3>
+          <p className="text-xs text-slate-400 mb-6">Target collection progress</p>
 
-            <div className="relative w-36 h-36 sm:w-40 sm:h-40 mx-auto flex items-center justify-center mb-6">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle className="text-slate-100" cx="50" cy="50" fill="none" r="45" stroke="currentColor" strokeWidth="8" />
-                <circle
-                  className="text-[#006c4d] transition-all duration-1000 ease-out"
-                  cx="50"
-                  cy="50"
-                  fill="none"
-                  r="45"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  strokeDasharray="283"
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl sm:text-3xl font-bold text-[#006c4d]">{stats.collectionPercentage}%</span>
-                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Collected</span>
-              </div>
+          <div className="relative w-36 h-36 sm:w-40 sm:h-40 mx-auto flex items-center justify-center mb-6">
+            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+              <circle className="text-slate-100" cx="50" cy="50" fill="none" r="45" stroke="currentColor" strokeWidth="8" />
+              <circle
+                className="text-[#006c4d] transition-all duration-1000 ease-out"
+                cx="50"
+                cy="50"
+                fill="none"
+                r="45"
+                stroke="currentColor"
+                strokeWidth="8"
+                strokeDasharray="283"
+                strokeDashoffset={strokeDashoffset}
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl sm:text-3xl font-bold text-[#006c4d]">{stats.collectionPercentage}%</span>
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Collected</span>
             </div>
-
-            <button
-              onClick={() => router.push('/fees')}
-              className="text-xs sm:text-sm font-semibold text-[#006c4d] hover:underline flex items-center justify-center w-full gap-1 cursor-pointer"
-            >
-              Generate Fee Vouchers →
-            </button>
           </div>
+
+          <button
+            onClick={() => router.push('/fees')}
+            className="text-xs sm:text-sm font-semibold text-[#006c4d] hover:underline flex items-center justify-center w-full gap-1 cursor-pointer"
+          >
+            Generate Fee Vouchers →
+          </button>
         </div>
 
         <div className="bg-white rounded-2xl p-5 sm:p-6 lg:col-span-2 flex flex-col border border-slate-200/80 shadow-xs">
@@ -577,75 +596,152 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* NEW ADMISSION MODAL WITH 8 FIELDS + CONTACT PHONE */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-lg p-6 sm:p-8 relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-xl p-6 sm:p-8 relative my-8">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
               <div>
-                <h3 className="text-xl font-bold text-slate-900">New Admission</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Enrolling new student to {institute.name} ({institute.type})
-                </p>
+                <h3 className="text-xl font-bold text-slate-900">New Student Admission</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Enter complete official student credentials</p>
               </div>
               <button
                 onClick={() => setModalOpen(false)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ✕
               </button>
             </div>
 
             {showSuccess ? (
               <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-[#006c4d] flex items-center justify-center">
-                  <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
+                <div className="w-16 h-16 rounded-full bg-emerald-100 text-[#006c4d] flex items-center justify-center font-bold text-xl">
+                  ✓
                 </div>
                 <h4 className="text-lg font-bold text-slate-900">Admission Completed!</h4>
-                <p className="text-xs text-slate-500 max-w-xs">Student profile created successfully.</p>
+                <p className="text-xs text-slate-500">Student profile registered successfully.</p>
               </div>
             ) : (
-              <form onSubmit={handleAddAdmissionSubmit} className="space-y-4">
+              <form onSubmit={handleAddAdmissionSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+                
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Student Full Name *</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">1. Student's Full Name *</label>
                   <input
                     type="text"
                     required
                     value={formData.fullName}
                     onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                     placeholder="e.g. Muhammad Ali"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Class / Batch</label>
-                  <select
-                    value={formData.className}
-                    onChange={(e) => setFormData({ ...formData, className: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all bg-white cursor-pointer"
-                  >
-                    <option value="General">General / Unassigned</option>
-                    {classesList.map((c) => (
-                      <option key={c.id} value={c.name}>
-                        {c.name} {c.section ? `(${c.section})` : ''} {c.shift ? `• ${c.shift}` : ''}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Fee Amount (Rs.)</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">2. Date of Birth</label>
+                    <input
+                      type="date"
+                      value={formData.dateOfBirth}
+                      onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">6. Year of Admission</label>
+                    <input
+                      type="text"
+                      value={formData.admissionYear}
+                      onChange={(e) => setFormData({ ...formData, admissionYear: e.target.value })}
+                      placeholder="e.g. 2026"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">3. Father's / Guardian Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.guardianName}
+                      onChange={(e) => setFormData({ ...formData, guardianName: e.target.value })}
+                      placeholder="e.g. Tariq Mahmood"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">4. Father's / Guardian Occupation</label>
+                    <input
+                      type="text"
+                      value={formData.guardianOccupation}
+                      onChange={(e) => setFormData({ ...formData, guardianOccupation: e.target.value })}
+                      placeholder="e.g. Engineer / Businessman"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Parent / Guardian Contact Phone</label>
+                    <input
+                      type="tel"
+                      value={formData.parentPhone}
+                      onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
+                      placeholder="e.g. 0300-1234567"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">5. Residential Address</label>
+                    <input
+                      type="text"
+                      value={formData.residentialAddress}
+                      onChange={(e) => setFormData({ ...formData, residentialAddress: e.target.value })}
+                      placeholder="e.g. House 12, Street 4, Islamabad"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">7. Class at Time of Admission</label>
+                    <input
+                      type="text"
+                      value={formData.admissionClass}
+                      onChange={(e) => setFormData({ ...formData, admissionClass: e.target.value })}
+                      placeholder="e.g. 9th Grade"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">8. Current Class *</label>
+                    <select
+                      value={formData.currentClass}
+                      onChange={(e) => setFormData({ ...formData, currentClass: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
+                    >
+                      <option value="General">General / Unassigned</option>
+                      {classesList.map((c) => (
+                        <option key={c.id} value={c.name}>
+                          {c.name} {c.section ? `(${c.section})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Monthly Fee Amount (Rs.)</label>
                     <input
                       type="number"
                       value={formData.feeAmount}
                       onChange={(e) => setFormData({ ...formData, feeAmount: e.target.value })}
                       placeholder="e.g. 5000"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d]"
                     />
                   </div>
                   <div>
@@ -653,7 +749,7 @@ export default function DashboardPage() {
                     <select
                       value={formData.feeStatus}
                       onChange={(e) => setFormData({ ...formData, feeStatus: e.target.value })}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all bg-white cursor-pointer"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] bg-white cursor-pointer"
                     >
                       <option value="Paid">Paid (Collected)</option>
                       <option value="Pending">Pending (Unpaid)</option>
@@ -661,42 +757,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Parent / Guardian Name</label>
-                    <input
-                      type="text"
-                      value={formData.parentName}
-                      onChange={(e) => setFormData({ ...formData, parentName: e.target.value })}
-                      placeholder="e.g. Tariq Mahmood"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Contact Phone</label>
-                    <input
-                      type="tel"
-                      value={formData.parentPhone}
-                      onChange={(e) => setFormData({ ...formData, parentPhone: e.target.value })}
-                      placeholder="e.g. 0300-1234567"
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Residential Address</label>
-                  <input
-                    type="text"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="e.g. Street 4, Sector G-8, Islamabad"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-[#006c4d] focus:ring-2 focus:ring-[#006c4d]/20 transition-all"
-                  />
-                </div>
-
-                <div className="pt-4 flex items-center justify-end gap-3">
+                <div className="pt-4 flex items-center justify-end gap-3 sticky bottom-0 bg-white py-2 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setModalOpen(false)}
@@ -704,7 +765,6 @@ export default function DashboardPage() {
                   >
                     Cancel
                   </button>
-
                   <button
                     type="submit"
                     disabled={isSubmitting}
@@ -719,6 +779,7 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* EXPORT MODAL */}
       {exportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 w-full max-w-md p-6 relative">
@@ -731,9 +792,7 @@ export default function DashboardPage() {
                 onClick={() => setExportModalOpen(false)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ✕
               </button>
             </div>
 
